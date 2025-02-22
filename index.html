@@ -11,141 +11,146 @@
     <div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> Basic effect</div>
 
     <script type="importmap">
-      {
-	  "imports": {
-	      "three": "./three.module.js",
-	      "three/addons/": "./jsm/"
-	  }
-      }
+		{
+			"imports": {
+			"three": "./three.module.js",
+			"three/addons/": "./jsm/"
+			}
+		}
     </script>
+
     <script id="post-vert" type="x-shader/x-vertex">
-      //in vec3 normal;
-      //uniform mat4 projection;
-      //uniform mat4 modelview;
-      //uniform mat4 normalMat;
-      out vec3 vertPos;
-      out vec3 vcolor;
-      out float depth;
-      void main(){
-	  vec3 nposition= position + 3.0 * normal;
-	  vec4 vertPos4 = modelViewMatrix * vec4( nposition, 1.0);
-	  vertPos       = position; // vec3(vertPos4) / vertPos4.w;
-	  gl_Position   = projectionMatrix * vertPos4;
-	  float id      = float(gl_VertexID);
-	  float r       = mod( id, 16.0 ) / 16.0;
-	  float g       = mod( id, 64.0 ) / 64.0;
-	  float b       = mod( id, 256.0 ) / 256.0;	  
-	  vcolor        = vec3( r, g, b );
-	  depth         = gl_Position.z;
-      }
+		void main(){
+			vec3 nposition = position + 3.0 * normal;
+			vec4 vertPos4  = projectionMatrix * modelViewMatrix * vec4( nposition, 1.0);
+			gl_Position    = vertPos4;
+		}
     </script>
+
     <script id="post-frag" type="x-shader/x-fragment">
-      uniform float cameraNear;
-      uniform float cameraFar;
-      in vec3  vertPos;
-      in float depth;
-      in vec3 vcolor;
-      out vec4 outColor;
-      void main() {
-	  // outColor.rgb = vec3( vertPos.x / 50.0, vertPos.y / 50.0,
-	  // 		       clamp( 6.*(10.-vertPos.z)/(cameraFar-cameraNear), 0., 1.) );
-	  // outColor.rgb = vec3( vertPos.x / 100.0, vertPos.y / 100.0, (depth-150.)/50.0 );
-	  // outColor.rgb = vec3( 1.0, 0.0, 1.0 );
-	  vec2 pixel = gl_FragCoord.xy;
-	  vec2 q = vec2( 700., 500.);
-	  if ( distance( pixel, q ) < 100.0 )
-	  {
-	      outColor.rgb = vec3( 1.0, 1.0, 0.0 );
-	  }
-	  else outColor.rgb = vcolor;
-	  outColor.a = 1.0;
-      }
+		out vec4 outColor;
+
+		uniform int maxIterations;
+
+		vec2 newCoords(vec2 Z, vec2 C){
+			return vec2(pow(Z.x, 2.) - pow(Z.y, 2.) + C.x, 2. * Z.x * Z.y + C.y);
+		}
+
+		vec3 color(vec2 coords) {
+			int iterations = 0;
+			vec2 temp = coords;
+
+			while (iterations < maxIterations && distance(temp, vec2(0., 0.)) < 2.){
+				temp = newCoords(temp, coords);
+				iterations += 1;
+			}
+
+			float distanceFinale = distance(temp, vec2(0., 0.));
+			float prop = float(iterations) / float(maxIterations);
+
+			vec3 couleurInterieure = vec3(1., .5, .5);
+
+			if (distanceFinale < 2.){
+				return couleurInterieure;
+			} else{
+				return mix(vec3(1., 1., 1.), couleurInterieure, prop);
+			}
+		}
+
+		void main() {
+			vec2 pixelCoords = gl_FragCoord.xy; // [0,1920] x [0,1080]
+			vec2 coords = vec2(pixelCoords.x / 1920., pixelCoords.y / 1080.); // [0,1] x [0,1]
+			coords -= vec2(.5, .5); // [-0.5,0.5] x [-0.5,0.5]
+			coords *= 4.; // [-2,2] x [-2,2]
+
+			outColor = vec4(color(coords), 1.);
+		}
+
+		
     </script>
 
     <script type="module">
 
-      import * as THREE from 'three';
-      import { GUI } from 'three/addons/lil-gui.module.min.js';
+		import * as THREE from 'three';
+		import { GUI } from 'three/addons/lil-gui.module.min.js';
 
-      let camera, scene, renderer, object;
-      let distance = 200.0;
-      let map;
-      let shader;
-      var uniforms;
-      init();
-      animate();
-      
-      function init() {
-	  camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
-	  camera.position.y = 0;
-	  uniforms = {
-	      cameraNear: { value: camera.near },
-	      cameraFar: { value: camera.far },
-	      lightDirection : { value : new THREE.Vector3( 0.0, 1.0, 0.0 ) },
-	      gouraud: { value: true },
-	      moment: { value: 0.0 }
-	  };
-	  console.log( camera.near );
-	  console.log( camera.far );	  
-	  scene = new THREE.Scene();
+		let camera, scene, renderer, object;
+		let distance = 100.0;
+		let map;
+		let shader;
+		var uniforms;
+		let settings = { max_iterations: 250 };
+		
+		init();
+		animate();
+		initGui();
 
-	  const ambientLight = new THREE.AmbientLight( 0xcccccc, 1.5 );
-	  scene.add( ambientLight );
+		// Init gui
+		function initGui() {
+			const gui = new GUI();
+			gui.add( settings, 'max_iterations' ).name("Max iterations").min( 0 ).max( 500 ).onChange(
+				function ( value ) {
+					shader.uniforms.maxIterations.value = value;
+				} );
+		}
+		
+		function init() {
+			camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
+			camera.position.y = 0;
 
-	  const pointLight = new THREE.PointLight( 0xffffff, 2.5, 0, 0 );
-	  camera.add( pointLight );
-	  scene.add( camera );
+			uniforms = {
+				maxIterations : { value: 250 }
+			};
+			 
+			scene = new THREE.Scene();
 
-          shader = new THREE.ShaderMaterial( {
-	      vertexShader: document.querySelector( '#post-vert' ).textContent.trim(),
-	      fragmentShader: document.querySelector( '#post-frag' ).textContent.trim(),
-	      uniforms: uniforms
-	  } );
-	  shader.glslVersion = THREE.GLSL3;
-	  //
-	  object = new THREE.Mesh( new THREE.TorusKnotGeometry( 50, 10, 50, 10, 2, 3 ),
-				   shader ); // material );
-	  object.position.set( 0, 0, 0 );
-	  scene.add( object );
+			shader = new THREE.ShaderMaterial( {
+			vertexShader: document.querySelector( '#post-vert' ).textContent.trim(),
+			fragmentShader: document.querySelector( '#post-frag' ).textContent.trim(),
+			uniforms: uniforms
+			} );
 
-	  //
-	  renderer = new THREE.WebGLRenderer( { antialias: true } );
-	  renderer.setPixelRatio( window.devicePixelRatio );
-	  renderer.setSize( window.innerWidth, window.innerHeight );
-	  document.body.appendChild( renderer.domElement );
+			shader.glslVersion = THREE.GLSL3;
 
-	  //
-	  window.addEventListener( 'resize', onWindowResize );
+			object = new THREE.Mesh( new THREE.TorusKnotGeometry( 50, 10, 100, 20, 2, 3 ), shader );
+			object.position.set( 0, 0, 0 );
+			scene.add( object );
 
-      }
+			renderer = new THREE.WebGLRenderer( { antialias: true } );
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
 
-      function onWindowResize() {
-	  camera.aspect = window.innerWidth / window.innerHeight;
-	  camera.updateProjectionMatrix();
-	  renderer.setSize( window.innerWidth, window.innerHeight );
-      }
+			window.addEventListener( 'resize', onWindowResize );
+		}
 
-      //
-      function animate() {
-	  requestAnimationFrame( animate );
-	  render();
-      }
+		function onWindowResize() {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+		}
 
-      function render() {
-	  const timer = Date.now() * 0.0001;
-	  camera.position.x = Math.cos( timer ) * distance;
-	  camera.position.z = Math.sin( timer ) * distance;
-	  camera.lookAt( scene.position );
-	  
-	  //map.offset = new THREE.Vector2( (timer*2.0) % 1.0, 0.0 );
-	  scene.traverse( function ( object ) {
-	      if ( object.isMesh === true ) {
-		  //object.rotation.x = timer * 5;
-		  //object.rotation.y = timer * 2.5;
-	      }
-	  } );
-	  renderer.render( scene, camera );
-      }
+		//
+		function animate() {
+			requestAnimationFrame( animate );
+			render();
+		}
+
+		function render() {
+			const timer = Date.now() * 0.0001;
+			camera.position.x = Math.cos( timer ) * distance;
+			camera.position.z = Math.sin( timer ) * distance;
+			camera.lookAt( scene.position );
+			
+			//map.offset = new THREE.Vector2( (timer*2.0) % 1.0, 0.0 );
+			scene.traverse( function ( object ) {
+				if ( object.isMesh === true ) {
+				//object.rotation.x = timer * 5;
+				//object.rotation.y = timer * 2.5;
+				}
+			} );
+			renderer.render( scene, camera );
+		}
     </script>
 
   </body>
