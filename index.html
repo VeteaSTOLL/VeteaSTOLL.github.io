@@ -20,20 +20,47 @@
     </script>
 
     <script id="post-vert" type="x-shader/x-vertex">
+		out vec4 vertPos;
+
 		void main(){
-			vec3 nposition = position + 3.0 * normal;
+			vec3 nposition = position;
 			vec4 vertPos4  = projectionMatrix * modelViewMatrix * vec4( nposition, 1.0);
 			gl_Position    = vertPos4;
+			vertPos = vertPos4;
 		}
     </script>
 
     <script id="post-frag" type="x-shader/x-fragment">
+		in vec4 vertPos;
 		out vec4 outColor;
 
 		uniform int maxIterations;
+		uniform float zoom;
+		uniform vec2 offset;
+		uniform vec2 size;
 
 		vec2 newCoords(vec2 Z, vec2 C){
-			return vec2(pow(Z.x, 2.) - pow(Z.y, 2.) + C.x, 2. * Z.x * Z.y + C.y);
+			return vec2(Z.x * Z.x - Z.y * Z.y + C.x, 2. * Z.x * Z.y + C.y);
+		}
+
+		vec3 getColor(float t){
+			int length = 5;
+			vec3 colors[] = vec3[] (
+				vec3(0., 0., 1.),
+				vec3(1., 1., 1.),
+				vec3(1., .5, 0.),
+				vec3(1., 0., 0.),
+				vec3(0., 0., 0.)
+			);
+
+			for (int i=0; i<length-1; i++) {
+				float threshold = float(i+1) / float(length-1);
+				if (t < threshold) {
+					float facteur = (t-float(i) / float(length-1)) * float(length - 1);
+					return mix(colors[i], colors[i+1], facteur);
+				}
+			}
+
 		}
 
 		vec3 color(vec2 coords) {
@@ -48,21 +75,22 @@
 			float distanceFinale = distance(temp, vec2(0., 0.));
 			float prop = float(iterations) / float(maxIterations);
 
-			vec3 couleurInterieure = vec3(1., .5, .5);
-
 			if (distanceFinale < 2.){
-				return couleurInterieure;
+				return vec3(0., 0., 0.);
 			} else{
-				return mix(vec3(1., 1., 1.), couleurInterieure, prop);
+				return getColor(prop);
 			}
 		}
 
 		void main() {
-			vec2 pixelCoords = gl_FragCoord.xy; // [0,1920] x [0,1080]
-			vec2 coords = vec2(pixelCoords.x / 1920., pixelCoords.y / 1080.); // [0,1] x [0,1]
-			coords -= vec2(.5, .5); // [-0.5,0.5] x [-0.5,0.5]
-			coords *= 4.; // [-2,2] x [-2,2]
+			vec2 pixelCoords = gl_FragCoord.xy - size/2.;
+			pixelCoords /= zoom;
+			pixelCoords += offset;
 
+			vec2 uvCoords = pixelCoords / size;
+			uvCoords *= 2.;
+
+			vec2 coords = uvCoords * 2.;
 			outColor = vec4(color(coords), 1.);
 		}
 
@@ -75,11 +103,11 @@
 		import { GUI } from 'three/addons/lil-gui.module.min.js';
 
 		let camera, scene, renderer, object;
-		let distance = 100.0;
+		let distance = .6;
 		let map;
 		let shader;
 		var uniforms;
-		let settings = { max_iterations: 250 };
+		let settings = { max_iterations: 250};
 		
 		init();
 		animate();
@@ -95,30 +123,34 @@
 		}
 		
 		function init() {
-			camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
+			camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, .1, 2000 );
 			camera.position.y = 0;
-
+			
 			uniforms = {
-				maxIterations : { value: 250 }
+				maxIterations : { value: 250 },
+				zoom : { value : 1. },
+				offset : { value : [0., 0.] },
+				size : { value : [1920, 1080] }
 			};
 			 
 			scene = new THREE.Scene();
 
 			shader = new THREE.ShaderMaterial( {
-			vertexShader: document.querySelector( '#post-vert' ).textContent.trim(),
-			fragmentShader: document.querySelector( '#post-frag' ).textContent.trim(),
-			uniforms: uniforms
+				vertexShader: document.querySelector( '#post-vert' ).textContent.trim(),
+				fragmentShader: document.querySelector( '#post-frag' ).textContent.trim(),
+				uniforms: uniforms
 			} );
 
 			shader.glslVersion = THREE.GLSL3;
 
-			object = new THREE.Mesh( new THREE.TorusKnotGeometry( 50, 10, 100, 20, 2, 3 ), shader );
+			object = new THREE.Mesh( new THREE.BoxGeometry( 1, 1, 1 ), shader );
 			object.position.set( 0, 0, 0 );
 			scene.add( object );
 
 			renderer = new THREE.WebGLRenderer( { antialias: true } );
 			renderer.setPixelRatio( window.devicePixelRatio );
 			renderer.setSize( window.innerWidth, window.innerHeight );
+			shader.uniforms.size.value = [window.innerWidth, window.innerHeight];
 			document.body.appendChild( renderer.domElement );
 
 			window.addEventListener( 'resize', onWindowResize );
@@ -128,29 +160,48 @@
 			camera.aspect = window.innerWidth / window.innerHeight;
 			camera.updateProjectionMatrix();
 			renderer.setSize( window.innerWidth, window.innerHeight );
+			shader.uniforms.size.value = [window.innerWidth, window.innerHeight];
 		}
 
-		//
 		function animate() {
 			requestAnimationFrame( animate );
 			render();
 		}
 
-		function render() {
-			const timer = Date.now() * 0.0001;
-			camera.position.x = Math.cos( timer ) * distance;
-			camera.position.z = Math.sin( timer ) * distance;
+		function render() {		
+			camera.position.x = distance;
+			camera.position.z = distance;
 			camera.lookAt( scene.position );
-			
-			//map.offset = new THREE.Vector2( (timer*2.0) % 1.0, 0.0 );
-			scene.traverse( function ( object ) {
-				if ( object.isMesh === true ) {
-				//object.rotation.x = timer * 5;
-				//object.rotation.y = timer * 2.5;
-				}
-			} );
+
 			renderer.render( scene, camera );
 		}
+
+
+		document.addEventListener("wheel", function zoom(event) {
+			shader.uniforms.zoom.value += event.deltaY * -0.005 * shader.uniforms.zoom.value;
+			if (shader.uniforms.zoom.value < 0) {
+				shader.uniforms.zoom.value = 0;
+			}
+		})
+
+		var mouse_pressed = false;
+
+		document.addEventListener("mousedown", (event) => {
+			mouse_pressed = true;
+		})
+
+		document.addEventListener("mousemove", (event) => {
+			if (mouse_pressed){
+				shader.uniforms.offset.value[0] -= event.movementX / shader.uniforms.zoom.value;
+				shader.uniforms.offset.value[1] += event.movementY / shader.uniforms.zoom.value;
+			}
+		})
+
+		document.addEventListener("mouseup", (event) => {			
+			mouse_pressed = false;
+		})
+
+
     </script>
 
   </body>
