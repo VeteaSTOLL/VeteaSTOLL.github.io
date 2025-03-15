@@ -21,23 +21,26 @@
 
     <script id="post-vert" type="x-shader/x-vertex">
 		out vec4 vertPos;
+		out vec2 vUv;
 
 		void main(){
-			vec3 nposition = position;
-			vec4 vertPos4  = projectionMatrix * modelViewMatrix * vec4( nposition, 1.0);
+			vec4 vertPos4  = projectionMatrix * modelViewMatrix * vec4(position, 1.);
 			gl_Position    = vertPos4;
 			vertPos = vertPos4;
+			vUv = uv;
 		}
     </script>
 
     <script id="post-frag" type="x-shader/x-fragment">
 		in vec4 vertPos;
+		in vec2 vUv;
 		out vec4 outColor;
 
 		uniform int maxIterations;
 		uniform float zoom;
 		uniform vec2 offset;
 		uniform vec2 size;
+		uniform bool uvMapping;
 
 		vec2 newCoords(vec2 Z, vec2 C){
 			return vec2(Z.x * Z.x - Z.y * Z.y + C.x, 2. * Z.x * Z.y + C.y);
@@ -63,6 +66,10 @@
 
 		}
 
+		float newT(float t){
+			return -((t-1.)*(t-1.))+1.;
+		}
+
 		vec3 color(vec2 coords) {
 			int iterations = 0;
 			vec2 temp = coords;
@@ -78,20 +85,25 @@
 			if (distanceFinale < 2.){
 				return vec3(0., 0., 0.);
 			} else{
-				return getColor(prop);
+				return getColor(newT(prop));
 			}
 		}
 
 		void main() {
-			vec2 pixelCoords = gl_FragCoord.xy - size/2.;
-			pixelCoords /= zoom;
-			pixelCoords += offset;
-
-			vec2 uvCoords = pixelCoords / size;
-			uvCoords *= 2.;
-
-			vec2 coords = uvCoords * 2.;
-			outColor = vec4(color(coords), 1.);
+			if (uvMapping) {
+				vec2 coords = (vUv - .5) * 4.;
+				outColor = vec4(color(coords), 1.);
+			} else {
+				vec2 pixelCoords = gl_FragCoord.xy - size/2.;
+				pixelCoords /= zoom;
+				pixelCoords += offset;
+	
+				vec2 screenUvCoords = pixelCoords / size;
+				screenUvCoords *= 2.;
+	
+				vec2 coords = screenUvCoords * 2.;
+				outColor = vec4(color(coords), 1.);
+			}
 		}
 
 		
@@ -103,11 +115,11 @@
 		import { GUI } from 'three/addons/lil-gui.module.min.js';
 
 		let camera, scene, renderer, object;
-		let distance = .6;
+		let distance = 1.5;
 		let map;
 		let shader;
 		var uniforms;
-		let settings = { max_iterations: 250};
+		let settings = { max_iterations: 250, uvMapping: false};
 		
 		init();
 		animate();
@@ -117,9 +129,14 @@
 		function initGui() {
 			const gui = new GUI();
 			gui.add( settings, 'max_iterations' ).name("Max iterations").min( 0 ).max( 500 ).onChange(
-				function ( value ) {
-					shader.uniforms.maxIterations.value = value;
-				} );
+			function ( value ) {
+				shader.uniforms.maxIterations.value = value;
+			} );
+			
+			gui.add( settings, 'uvMapping' ).name("UV").onChange(
+			function ( value ) {
+				shader.uniforms.uvMapping.value = value;
+			} );
 		}
 		
 		function init() {
@@ -130,7 +147,8 @@
 				maxIterations : { value: 250 },
 				zoom : { value : 1. },
 				offset : { value : [0., 0.] },
-				size : { value : [1920, 1080] }
+				size : { value : [1920, 1080] },
+				uvMapping : { value : false }
 			};
 			 
 			scene = new THREE.Scene();
@@ -169,8 +187,9 @@
 		}
 
 		function render() {		
-			camera.position.x = distance;
-			camera.position.z = distance;
+			const timer = Date.now() * 0.0001;
+			camera.position.x = Math.cos( timer ) * distance;
+			camera.position.z = Math.sin( timer ) * distance;
 			camera.lookAt( scene.position );
 
 			renderer.render( scene, camera );
