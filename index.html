@@ -92,13 +92,15 @@
 		void main() {
 			if (uvMapping) {
 				vec2 coords = (vUv - .5) * 4.;
+				coords /= zoom;
+				coords += (offset * 4.) / min(size[0], size[1]);
 				outColor = vec4(color(coords), 1.);
 			} else {
 				vec2 pixelCoords = gl_FragCoord.xy - size/2.;
 				pixelCoords /= zoom;
 				pixelCoords += offset;
 	
-				vec2 screenUvCoords = pixelCoords / size;
+				vec2 screenUvCoords = pixelCoords / min(size[0], size[1]);
 				screenUvCoords *= 2.;
 	
 				vec2 coords = screenUvCoords * 2.;
