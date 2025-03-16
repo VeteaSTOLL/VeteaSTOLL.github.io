@@ -31,8 +31,7 @@
 		}
     </script>
 
-    <script id="post-frag" type="x-shader/x-fragment">
-		in vec4 vertPos;
+    <script id="post-frag-mandelbrot" type="x-shader/x-fragment">
 		in vec2 vUv;
 		out vec4 outColor;
 
@@ -43,8 +42,18 @@
 		uniform vec2 size;
 		uniform bool uvMapping;
 
-		vec2 newCoords(vec2 Z, vec2 C){
-			return vec2(Z.x * Z.x - Z.y * Z.y + C.x, 2. * Z.x * Z.y + C.y);
+		uniform bool julia;
+		uniform vec2 C;
+
+		vec2 newCoords(vec2 Z, vec2 origine){
+			vec2 addition;
+			if (julia) {
+				addition = C;
+			} else {
+				addition = origine;
+			}
+
+			return vec2(Z.x * Z.x - Z.y * Z.y + addition.x, 2. * Z.x * Z.y + addition.y);
 		}
 
 		vec3 getColor(float t){
@@ -115,7 +124,7 @@
 
 		
     </script>
-
+	
     <script type="module">
 
 		import * as THREE from 'three';
@@ -124,9 +133,9 @@
 		let camera, scene, renderer, object;
 		let distance = 1.5;
 		let map;
-		let shader;
-		var uniforms;
-		let settings = { max_iterations: 250, puissanceCouleur: 2, uvMapping: false};
+		let shaderMandelbrot;
+		var uniformsMandelbrot;
+		let settings = { max_iterations: 250, puissanceCouleur: 2, uvMapping: false, julia: false, cx: .285, cy: .01};
 		
 		init();
 		animate();
@@ -137,17 +146,32 @@
 			const gui = new GUI();
 			gui.add( settings, 'max_iterations' ).name("Max iterations").min( 0 ).max( 500 ).onChange(
 			function ( value ) {
-				shader.uniforms.maxIterations.value = value;
+				shaderMandelbrot.uniforms.maxIterations.value = value;
 			} );
 
 			gui.add( settings, 'puissanceCouleur' ).name("Puissance Couleur").min( 1 ).max( 10 ).onChange(
 			function ( value ) {
-				shader.uniforms.puissanceCouleur.value = value;
+				shaderMandelbrot.uniforms.puissanceCouleur.value = value;
 			} );
 			
 			gui.add( settings, 'uvMapping' ).name("UV").onChange(
 			function ( value ) {
-				shader.uniforms.uvMapping.value = value;
+				shaderMandelbrot.uniforms.uvMapping.value = value;
+			} );
+
+			gui.add( settings, 'julia' ).name("Julia").onChange(
+			function ( value ) {
+				shaderMandelbrot.uniforms.julia.value = value;
+			} );
+
+			gui.add( settings, 'cx' ).name("Cx").min( -2 ).max( 2 ).onChange(
+			function ( value ) {
+				shaderMandelbrot.uniforms.C.value[0] = value;
+			} );
+
+			gui.add( settings, 'cy' ).name("Cy").min( -2 ).max( 2 ).onChange(
+			function ( value ) {
+				shaderMandelbrot.uniforms.C.value[1] = value;
 			} );
 		}
 		
@@ -155,33 +179,35 @@
 			camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, .1, 2000 );
 			camera.position.y = 0;
 			
-			uniforms = {
+			uniformsMandelbrot = {
 				maxIterations : { value : 250 },
 				puissanceCouleur : { value : 2. },
 				zoom : { value : 1. },
 				offset : { value : [0., 0.] },
 				size : { value : [1920, 1080] },
-				uvMapping : { value : false }
+				uvMapping : { value : false },
+				julia : { value : false },
+				C : { value : [.285, .01]},
 			};
 			 
 			scene = new THREE.Scene();
 
-			shader = new THREE.ShaderMaterial( {
+			shaderMandelbrot = new THREE.ShaderMaterial( {
 				vertexShader: document.querySelector( '#post-vert' ).textContent.trim(),
-				fragmentShader: document.querySelector( '#post-frag' ).textContent.trim(),
-				uniforms: uniforms
+				fragmentShader: document.querySelector( '#post-frag-mandelbrot' ).textContent.trim(),
+				uniforms: uniformsMandelbrot
 			} );
 
-			shader.glslVersion = THREE.GLSL3;
+			shaderMandelbrot.glslVersion = THREE.GLSL3;
 
-			object = new THREE.Mesh( new THREE.BoxGeometry( 1, 1, 1 ), shader );
+			object = new THREE.Mesh( new THREE.BoxGeometry( 1, 1, 1 ), shaderMandelbrot );
 			object.position.set( 0, 0, 0 );
 			scene.add( object );
 
 			renderer = new THREE.WebGLRenderer( { antialias: true } );
 			renderer.setPixelRatio( window.devicePixelRatio );
 			renderer.setSize( window.innerWidth, window.innerHeight );
-			shader.uniforms.size.value = [window.innerWidth, window.innerHeight];
+			shaderMandelbrot.uniforms.size.value = [window.innerWidth, window.innerHeight];
 			document.body.appendChild( renderer.domElement );
 
 			window.addEventListener( 'resize', onWindowResize );
@@ -191,7 +217,7 @@
 			camera.aspect = window.innerWidth / window.innerHeight;
 			camera.updateProjectionMatrix();
 			renderer.setSize( window.innerWidth, window.innerHeight );
-			shader.uniforms.size.value = [window.innerWidth, window.innerHeight];
+			shaderMandelbrot.uniforms.size.value = [window.innerWidth, window.innerHeight];
 		}
 
 		function animate() {
@@ -210,9 +236,9 @@
 
 
 		document.addEventListener("wheel", function zoom(event) {
-			shader.uniforms.zoom.value += event.deltaY * -0.005 * shader.uniforms.zoom.value;
-			if (shader.uniforms.zoom.value < 0) {
-				shader.uniforms.zoom.value = 0;
+			shaderMandelbrot.uniforms.zoom.value += event.deltaY * -0.005 * shaderMandelbrot.uniforms.zoom.value;
+			if (shaderMandelbrot.uniforms.zoom.value < 0) {
+				shaderMandelbrot.uniforms.zoom.value = 0;
 			}
 		})
 
@@ -224,8 +250,8 @@
 
 		document.addEventListener("mousemove", (event) => {
 			if (mouse_pressed){
-				shader.uniforms.offset.value[0] -= event.movementX / shader.uniforms.zoom.value;
-				shader.uniforms.offset.value[1] += event.movementY / shader.uniforms.zoom.value;
+				shaderMandelbrot.uniforms.offset.value[0] -= event.movementX / shaderMandelbrot.uniforms.zoom.value;
+				shaderMandelbrot.uniforms.offset.value[1] += event.movementY / shaderMandelbrot.uniforms.zoom.value;
 			}
 		})
 
