@@ -37,6 +37,7 @@
 		out vec4 outColor;
 
 		uniform int maxIterations;
+		uniform int puissanceCouleur;
 		uniform float zoom;
 		uniform vec2 offset;
 		uniform vec2 size;
@@ -63,11 +64,18 @@
 					return mix(colors[i], colors[i+1], facteur);
 				}
 			}
-
 		}
 
 		float newT(float t){
-			return -((t-1.)*(t-1.))+1.;
+			float polynome = 1.;
+			for(int i=0; i<puissanceCouleur; i++){
+				polynome *= (t-1.);
+			}
+			if (mod(float(puissanceCouleur), 2.) == 0.){
+				polynome *= -1.;
+			}
+			polynome += 1.;
+			return polynome;
 		}
 
 		vec3 color(vec2 coords) {
@@ -90,22 +98,19 @@
 		}
 
 		void main() {
+			vec2 coords;
 			if (uvMapping) {
-				vec2 coords = (vUv - .5) * 4.;
-				coords /= zoom;
-				coords += (offset * 4.) / min(size[0], size[1]);
-				outColor = vec4(color(coords), 1.);
+				coords = (vUv - .5) * 4.;
 			} else {
-				vec2 pixelCoords = gl_FragCoord.xy - size/2.;
-				pixelCoords /= zoom;
-				pixelCoords += offset;
-	
+				vec2 pixelCoords = gl_FragCoord.xy - size/2.;	
 				vec2 screenUvCoords = pixelCoords / min(size[0], size[1]);
 				screenUvCoords *= 2.;
-	
-				vec2 coords = screenUvCoords * 2.;
-				outColor = vec4(color(coords), 1.);
+					
+				coords = screenUvCoords * 2.;
 			}
+			coords /= zoom;
+			coords += (offset * 4.) / min(size[0], size[1]);
+			outColor = vec4(color(coords), 1.);
 		}
 
 		
@@ -121,7 +126,7 @@
 		let map;
 		let shader;
 		var uniforms;
-		let settings = { max_iterations: 250, uvMapping: false};
+		let settings = { max_iterations: 250, puissanceCouleur: 2, uvMapping: false};
 		
 		init();
 		animate();
@@ -133,6 +138,11 @@
 			gui.add( settings, 'max_iterations' ).name("Max iterations").min( 0 ).max( 500 ).onChange(
 			function ( value ) {
 				shader.uniforms.maxIterations.value = value;
+			} );
+
+			gui.add( settings, 'puissanceCouleur' ).name("Puissance Couleur").min( 1 ).max( 10 ).onChange(
+			function ( value ) {
+				shader.uniforms.puissanceCouleur.value = value;
 			} );
 			
 			gui.add( settings, 'uvMapping' ).name("UV").onChange(
@@ -146,7 +156,8 @@
 			camera.position.y = 0;
 			
 			uniforms = {
-				maxIterations : { value: 250 },
+				maxIterations : { value : 250 },
+				puissanceCouleur : { value : 2. },
 				zoom : { value : 1. },
 				offset : { value : [0., 0.] },
 				size : { value : [1920, 1080] },
