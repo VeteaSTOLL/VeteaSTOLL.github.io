@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>three.js webgl - geometries</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="./main.css">
+  </head>
+  <body>
+
+    <div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> Basic effect</div>
+
+    <script type="importmap">
+		{
+			"imports": {
+				"three": "./three.module.js",
+				"three/addons/": "./jsm/"
+			}
+		}
+    </script>
+
+    <script id="post-vert" type="x-shader/x-vertex">
+		out vec2 vUv;
+		out vec3 vNormal;
+		out vec3 vPos;
+
+		void main(){
+			vec4 temp = projectionMatrix * modelViewMatrix * vec4(position, 1.);
+			gl_Position = temp;
+			vPos = temp.xyz;
+			vUv = uv;
+			vNormal = normalize(normalMatrix * normal);
+		}
+    </script>
+
+    <script id="post-frag" type="x-shader/x-fragment">
+		in vec2 vUv;
+		in vec3 vNormal;
+		in vec3 vPos;
+
+		out vec4 outColor;
+
+		uniform vec3 color;
+		uniform vec3 lightDirection;
+		uniform vec3 cameraPos;
+		uniform float exp;
+
+		void main() {
+			vec3 viewDirection = normalize(cameraPos - vPos);
+			vec3 reflection = lightDirection-2.*dot(lightDirection,vNormal)*vNormal;
+
+			float lumiere = dot(viewDirection, reflection);
+			lumiere = pow(clamp(lumiere, 0., 1.), exp);
+
+			float ombre = dot(vNormal, lightDirection);
+
+			outColor = vec4((color + lumiere) * ombre, 1.);
+		}		
+    </script>
+	
+    <script type="module">
+
+		import * as THREE from 'three';
+		import { GUI } from 'three/addons/lil-gui.module.min.js';
+
+		let camera, scene, renderer, object;
+		let distance = 50;
+		let shader;
+		var uniforms;
+		let settings = { exp: 1 };
+		
+		init();
+		animate();
+		initGui();
+
+		// Init gui
+		function initGui() {
+			const gui = new GUI();
+			gui.add( settings, 'exp' ).name("Exposant").min( 1 ).max( 10 ).onChange(
+			function ( value ) {
+				shader.uniforms.exp.value = value;
+			} );
+		}
+		
+		function init() {
+			camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, .1, 2000 );
+			camera.position.y = 0;
+
+			scene = new THREE.Scene();
+			
+			const light = new THREE.DirectionalLight(0xffffff, 1);
+			light.position.set(10, 10, 10);
+			scene.add(light);
+			const lightDirection = new THREE.Vector3().copy(light.position).normalize();
+
+			uniforms = {
+				lightDirection: { value: lightDirection },
+				cameraPos : { value: camera.position },
+				color: { value: new THREE.Vector3(.0156,.62,.957) },
+				exp: { value: 1}
+			};
+
+			shader = new THREE.ShaderMaterial( {
+				vertexShader: document.querySelector( '#post-vert' ).textContent.trim(),
+				fragmentShader: document.querySelector( '#post-frag' ).textContent.trim(),
+				uniforms: uniforms
+			} );
+
+			shader.glslVersion = THREE.GLSL3;
+
+			object = new THREE.Mesh( new THREE.TorusKnotGeometry( 10, 3, 1000, 160 ), shader );
+			object.position.set( 0, 0, 0 );
+			scene.add( object );
+
+			renderer = new THREE.WebGLRenderer( { antialias: true } );
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+
+			window.addEventListener( 'resize', onWindowResize );
+		}
+
+		function onWindowResize() {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+		}
+
+		function animate() {
+			requestAnimationFrame( animate );
+			render();
+		}
+
+		function render() {		
+			const timer = Date.now() * 0.0001;
+			camera.position.x = Math.cos( timer ) * distance;
+			camera.position.z = Math.sin( timer ) * distance;
+			camera.lookAt( scene.position );
+			shader.uniforms.cameraPos.value = camera.position;
+
+			renderer.render( scene, camera );
+		}
+
+    </script>
+
+  </body>
+</html>
