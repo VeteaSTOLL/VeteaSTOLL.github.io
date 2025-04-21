@@ -22,39 +22,59 @@
     <script id="post-vert" type="x-shader/x-vertex">
 		out vec2 vUv;
 		out vec3 vNormal;
-		out vec3 vPos;
+		out vec3 vWorldPos;
 
 		void main(){
-			vec4 temp = projectionMatrix * modelViewMatrix * vec4(position, 1.);
-			gl_Position = temp;
-			vPos = temp.xyz;
+			vWorldPos = (modelMatrix * vec4(position, 1.)).xyz;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
 			vUv = uv;
-			vNormal = normalize(normalMatrix * normal);
+			vNormal = normalize(mat3(modelMatrix) * normal);
 		}
     </script>
 
     <script id="post-frag" type="x-shader/x-fragment">
 		in vec2 vUv;
 		in vec3 vNormal;
-		in vec3 vPos;
+		in vec3 vWorldPos;
 
 		out vec4 outColor;
 
-		uniform vec3 color;
-		uniform vec3 lightDirection;
+		uniform vec3 baseColor;
+		uniform vec3 specularColor;
+		uniform vec3 lightPos;
 		uniform vec3 cameraPos;
 		uniform float exp;
+		uniform sampler2D envMap;
+		uniform bool metallic;
+
+		vec2 normal2uv(vec3 normal) {
+			float PI = 3.1415926535;
+			float yaw = atan(vNormal.x, vNormal.z); // [-PI, PI]
+			float pitch = asin(vNormal.y);          // [-PI/2, PI/2]
+			yaw /= PI*2.;
+			yaw += .5;
+			pitch /= PI;
+			pitch += .5;
+			return vec2(yaw, pitch);
+		}
 
 		void main() {
-			vec3 viewDirection = normalize(cameraPos - vPos);
-			vec3 reflection = lightDirection-2.*dot(lightDirection,vNormal)*vNormal;
+			vec3 viewDirection = normalize(cameraPos - vWorldPos);
+			vec3 lightDirection = normalize(vWorldPos - lightPos);
+			vec3 reflection = normalize(lightDirection-2.*dot(lightDirection,vNormal)*vNormal);
 
 			float lumiere = dot(viewDirection, reflection);
 			lumiere = pow(clamp(lumiere, 0., 1.), exp);
 
-			float ombre = dot(vNormal, lightDirection);
+			float ombre = dot(vNormal, -lightDirection);
 
-			outColor = vec4((color + lumiere) * ombre, 1.);
+			vec3 envMapColor = texture(envMap, normal2uv(reflection)).xyz;
+
+			if (metallic) {
+				outColor = vec4(envMapColor*baseColor, 1.);
+			} else {
+				outColor = vec4((baseColor + specularColor * lumiere) * ombre, 1.);
+			}
 		}		
     </script>
 	
@@ -67,7 +87,7 @@
 		let distance = 50;
 		let shader;
 		var uniforms;
-		let settings = { exp: 1 };
+		let settings = { exp: 1, baseColor: [.0156,.62,.957], specularColor: [1,1,1], metallic: true};
 		
 		init();
 		animate();
@@ -76,28 +96,43 @@
 		// Init gui
 		function initGui() {
 			const gui = new GUI();
-			gui.add( settings, 'exp' ).name("Exposant").min( 1 ).max( 10 ).onChange(
+			gui.add(settings, 'exp').name("Exposant").min( 1 ).max( 100 ).onChange(
 			function ( value ) {
 				shader.uniforms.exp.value = value;
 			} );
+			gui.addColor(settings, 'baseColor').name("Couleur base").onChange(
+			function ( value ) {
+				shader.uniforms.baseColor.value = value;
+			} );
+			gui.addColor(settings, 'specularColor').name("Couleur reflet").onChange(
+			function ( value ) {
+				shader.uniforms.specularColor.value = value;
+			} );
+			gui.add(settings, 'metallic').name("Métallique").onChange(
+			function ( value ) {
+				shader.uniforms.metallic.value = value;
+			});
 		}
 		
 		function init() {
 			camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, .1, 2000 );
 			camera.position.y = 0;
+			camera.position.z = 50;
 
 			scene = new THREE.Scene();
 			
 			const light = new THREE.DirectionalLight(0xffffff, 1);
 			light.position.set(10, 10, 10);
 			scene.add(light);
-			const lightDirection = new THREE.Vector3().copy(light.position).normalize();
 
 			uniforms = {
-				lightDirection: { value: lightDirection },
+				lightPos: { value: new THREE.Vector3(30,30,30) },
 				cameraPos : { value: camera.position },
-				color: { value: new THREE.Vector3(.0156,.62,.957) },
-				exp: { value: 1}
+				baseColor: { value: [.0156,.62,.957] },
+				specularColor: { value: [1,1,1] },
+				exp: { value: 1},
+				envMap: { type: "t", value: new THREE.TextureLoader().load( "textures/envMap.jpg" ) },
+				metallic: { value: true }
 			};
 
 			shader = new THREE.ShaderMaterial( {
@@ -132,11 +167,12 @@
 		}
 
 		function render() {		
-			const timer = Date.now() * 0.0001;
-			camera.position.x = Math.cos( timer ) * distance;
-			camera.position.z = Math.sin( timer ) * distance;
-			camera.lookAt( scene.position );
-			shader.uniforms.cameraPos.value = camera.position;
+			const timer = Date.now() * 0.0003;
+			// camera.position.x = Math.cos( timer ) * distance;
+			// camera.position.z = Math.sin( timer ) * distance;
+			// camera.lookAt( scene.position );
+			// shader.uniforms.cameraPos.value = camera.position;
+			object.rotation.y = timer%360;
 
 			renderer.render( scene, camera );
 		}
