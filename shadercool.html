@@ -23,12 +23,12 @@
 		out vec2 vUv;
 		out vec3 vNormal;
 		out vec3 vWorldPos;
-
+		
 		void main(){
-			vWorldPos = (modelMatrix * vec4(position, 1.)).xyz;
-			gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
 			vUv = uv;
 			vNormal = normalize(mat3(modelMatrix) * normal);
+			vWorldPos = (modelMatrix * vec4(position, 1.)).xyz;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
 		}
     </script>
 
@@ -46,27 +46,65 @@
 		uniform float exp;
 		uniform sampler2D envMap;
 		uniform bool metallic;
+		uniform float roughness;
 
-		vec2 normal2uv(vec3 normal) {
+		uniform vec2 W;
+		uniform float A;
+		uniform float V;
+		uniform float t;
+
+		vec2 vec2yp(vec3 vect) {
 			float PI = 3.1415926535;
-			float yaw = atan(vNormal.x, vNormal.z); // [-PI, PI]
-			float pitch = asin(vNormal.y);          // [-PI/2, PI/2]
-			yaw /= PI*2.;
-			yaw += .5;
-			pitch /= PI;
-			pitch += .5;
+			float yaw = atan(vect.x, vect.z); // [-PI, PI]
+			float pitch = asin(vect.y);          // [-PI/2, PI/2]
 			return vec2(yaw, pitch);
 		}
 
+		vec3 yp2vec(vec2 yp) {
+			float cosPitch = cos(yp.y);
+			return vec3(
+				sin(yp.x) * cosPitch,
+				sin(yp.y),
+				cos(yp.x) * cosPitch
+			);
+		}
+
+		vec2 normal2uv(vec3 normal) {
+			float PI = 3.1415926535;
+			vec2 yp = vec2yp(normal);
+			yp.x /= PI*2.;
+			yp.y /= PI;
+			yp += .5;
+			return yp;
+		}
+
+		vec3 random(vec2 co) {
+			float x = fract(sin(dot(co, vec2(127.1, 311.7))) * 43758.5453);
+			float y = fract(sin(dot(co, vec2(269.5, 183.3))) * 43758.5453);
+			float z = fract(sin(dot(co, vec2(113.5, 271.9))) * 43758.5453);
+			return vec3(x, y, z);
+		}
+
+		vec3 vaguelette(vec3 normal, vec2 co, float a, vec2 w, float v){
+			vec2 yp = vec2yp(normal);
+			yp.x += A * cos(w.x * co.x + t*v);
+			yp.y += A * cos(w.y * co.y + t*v);
+			return yp2vec(yp);
+		}
+
 		void main() {
+			vec3 newNormal = vaguelette(vNormal, vUv, A, W, V);
+
+			newNormal = mix(newNormal, random(vUv), roughness);
+
 			vec3 viewDirection = normalize(cameraPos - vWorldPos);
 			vec3 lightDirection = normalize(vWorldPos - lightPos);
-			vec3 reflection = normalize(lightDirection-2.*dot(lightDirection,vNormal)*vNormal);
+			vec3 reflection = normalize((-viewDirection)-2.*dot(-viewDirection,newNormal)*newNormal);
 
-			float lumiere = dot(viewDirection, reflection);
+			float lumiere = dot(lightDirection, -reflection);
 			lumiere = pow(clamp(lumiere, 0., 1.), exp);
 
-			float ombre = dot(vNormal, -lightDirection);
+			float ombre = dot(newNormal, -lightDirection);
 
 			vec3 envMapColor = texture(envMap, normal2uv(reflection)).xyz;
 
@@ -87,7 +125,7 @@
 		let distance = 50;
 		let shader;
 		var uniforms;
-		let settings = { exp: 1, baseColor: [.0156,.62,.957], specularColor: [1,1,1], metallic: true};
+		let settings = { exp: 20, baseColor: [.0156,.62,.957], specularColor: [1,1,1], metallic: true, roughness: 0, taille: 20, amplitude: .1, vitesse: 15, modele:'thorus' };
 		
 		init();
 		animate();
@@ -112,6 +150,44 @@
 			function ( value ) {
 				shader.uniforms.metallic.value = value;
 			});
+			gui.add(settings, 'roughness').name("Roughness").min( 0 ).max( .5 ).onChange(
+			function ( value ) {
+				shader.uniforms.roughness.value = value;
+			} );
+			gui.add(settings, 'taille').name("Taille").min( 1 ).max( 100 ).onChange(
+			function ( value ) {
+				switch (settings.modele) {
+				case 'thorus':
+					shader.uniforms.W.value = [10 * value, value];
+					break;
+				case 'cube':
+					shader.uniforms.W.value = [value, value];
+					break;
+				}
+			} );
+			gui.add(settings, 'amplitude').name("Amplitude").min( 0 ).max( 1 ).onChange(
+			function ( value ) {
+				shader.uniforms.A.value = value;
+			} );
+			gui.add(settings, 'vitesse').name("Vitesse").min( 0 ).max( 100 ).onChange(
+			function ( value ) {
+				shader.uniforms.V.value = value;
+			} );
+			gui.add(settings, 'modele', [ 'thorus', 'cube' ] ).name("Modèle").onChange(
+			function ( value ) {
+				scene.remove(object);
+				switch (value) {
+				case 'thorus':
+					object = new THREE.Mesh( new THREE.TorusKnotGeometry( 10, 3, 1000, 160 ), shader );
+					shader.uniforms.W.value = [10 * settings.taille, settings.taille];
+					break;
+				case 'cube':
+					object = new THREE.Mesh( new THREE.BoxGeometry( 20, 20, 20 ), shader );
+					shader.uniforms.W.value = [settings.taille, settings.taille];
+					break;
+				}
+				scene.add(object);
+			});
 		}
 		
 		function init() {
@@ -130,9 +206,14 @@
 				cameraPos : { value: camera.position },
 				baseColor: { value: [.0156,.62,.957] },
 				specularColor: { value: [1,1,1] },
-				exp: { value: 1},
+				exp: { value: 20},
 				envMap: { type: "t", value: new THREE.TextureLoader().load( "textures/envMap.jpg" ) },
-				metallic: { value: true }
+				metallic: { value: true },
+				roughness: { value: 0 },
+				W: { value: [200,20] },
+				A: { value: .1 },
+				t: { value: 0 },
+				V: { value: 15 }
 			};
 
 			shader = new THREE.ShaderMaterial( {
@@ -143,7 +224,7 @@
 
 			shader.glslVersion = THREE.GLSL3;
 
-			object = new THREE.Mesh( new THREE.TorusKnotGeometry( 10, 3, 1000, 160 ), shader );
+			object = new THREE.Mesh( new THREE.TorusKnotGeometry( 10, 3, 1000, 160 ), shader );			
 			object.position.set( 0, 0, 0 );
 			scene.add( object );
 
@@ -167,7 +248,8 @@
 		}
 
 		function render() {		
-			const timer = Date.now() * 0.0003;
+			const timer = (Date.now() * 0.0003) % 1000;
+			shader.uniforms.t.value = timer;
 			// camera.position.x = Math.cos( timer ) * distance;
 			// camera.position.z = Math.sin( timer ) * distance;
 			// camera.lookAt( scene.position );
