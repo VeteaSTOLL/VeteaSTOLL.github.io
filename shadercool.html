@@ -8,8 +8,6 @@
   </head>
   <body>
 
-    <div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> Basic effect</div>
-
     <script type="importmap">
 		{
 			"imports": {
@@ -41,12 +39,17 @@
 
 		uniform vec3 baseColor;
 		uniform vec3 specularColor;
+		uniform vec3 backgroundColor;
 		uniform vec3 lightPos;
 		uniform vec3 cameraPos;
 		uniform float exp;
 		uniform sampler2D envMap;
 		uniform bool metallic;
 		uniform float roughness;
+
+		uniform bool bubble;
+		uniform float hueChange;
+		uniform float transparency;
 
 		uniform vec2 W;
 		uniform float A;
@@ -92,6 +95,26 @@
 			return yp2vec(yp);
 		}
 
+		vec3 rgb2hsv(vec3 c) {
+			// Pas de moi mais j'ai pas l'auteur
+
+			vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+			vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+			vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+
+			float d = q.x - min(q.w, q.y);
+			float e = 1.0e-10;
+			return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+		}
+
+		vec3 hsv2rgb(vec3 c) {
+			// Algo de Sam Hocevar sur stack overflow
+
+			vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+			vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+			return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+		}
+
 		void main() {
 			vec3 newNormal = vaguelette(vNormal, vUv, A, W, V);
 
@@ -99,7 +122,9 @@
 
 			vec3 viewDirection = normalize(cameraPos - vWorldPos);
 			vec3 lightDirection = normalize(vWorldPos - lightPos);
-			vec3 reflection = normalize((-viewDirection)-2.*dot(-viewDirection,newNormal)*newNormal);
+
+			float viewDotNormal = dot(-viewDirection,newNormal);
+			vec3 reflection = normalize((-viewDirection)-2.* viewDotNormal *newNormal);
 
 			float lumiere = dot(lightDirection, -reflection);
 			lumiere = pow(clamp(lumiere, 0., 1.), exp);
@@ -108,7 +133,11 @@
 
 			vec3 envMapColor = texture(envMap, normal2uv(reflection)).xyz;
 
-			if (metallic) {
+			if (bubble) {
+				vec3 HSV = rgb2hsv(envMapColor);
+				HSV.x += viewDotNormal * hueChange;
+				outColor = vec4(hsv2rgb(HSV) + backgroundColor, min(pow(viewDotNormal+1., transparency), HSV.z));
+			} else if (metallic) {
 				outColor = vec4(envMapColor*baseColor, 1.);
 			} else {
 				outColor = vec4((baseColor + specularColor * lumiere) * ombre, 1.);
@@ -120,13 +149,16 @@
 
 		import * as THREE from 'three';
 		import { GUI } from 'three/addons/lil-gui.module.min.js';
+		import { OBJLoader } from 'three/addons/OBJLoader.js';
 
 		let camera, scene, renderer, object;
 		let distance = 50;
 		let shader;
 		var uniforms;
-		let settings = { exp: 20, baseColor: [.0156,.62,.957], specularColor: [1,1,1], metallic: true, roughness: 0, taille: 20, amplitude: .1, vitesse: 15, modele:'thorus' };
+		let settings = { exp: 20, baseColor: [.0156,.62,.957], specularColor: [1,1,1], backgroundColor: [0,0,0], metallic: true, roughness: 0, taille: 20, amplitude: 0, vitesse: 15, modele:'thorus', bubble: false, hueChange: .66, transparency: 1};
 		
+		let tortue;
+
 		init();
 		animate();
 		initGui();
@@ -145,6 +177,11 @@
 			gui.addColor(settings, 'specularColor').name("Couleur reflet").onChange(
 			function ( value ) {
 				shader.uniforms.specularColor.value = value;
+			} );			
+			gui.addColor(settings, 'backgroundColor').name("Couleur de fond").onChange(
+			function ( value ) {
+				scene.background = new THREE.Color().fromArray(value); 
+				shader.uniforms.backgroundColor.value = value;
 			} );
 			gui.add(settings, 'metallic').name("Métallique").onChange(
 			function ( value ) {
@@ -173,7 +210,7 @@
 			function ( value ) {
 				shader.uniforms.V.value = value;
 			} );
-			gui.add(settings, 'modele', [ 'thorus', 'cube' ] ).name("Modèle").onChange(
+			gui.add(settings, 'modele', [ 'thorus', 'cube', 'sphere', 'tortue' ] ).name("Modèle").onChange(
 			function ( value ) {
 				scene.remove(object);
 				switch (value) {
@@ -185,8 +222,29 @@
 					object = new THREE.Mesh( new THREE.BoxGeometry( 20, 20, 20 ), shader );
 					shader.uniforms.W.value = [settings.taille, settings.taille];
 					break;
+				case 'sphere':
+					object = new THREE.Mesh( new THREE.SphereGeometry( 15, 64, 32 ), shader );
+					shader.uniforms.W.value = [settings.taille, settings.taille];
+					break;
+				case 'tortue':
+					object = tortue;
+					shader.uniforms.W.value = [settings.taille, settings.taille];
+					break;
 				}
 				scene.add(object);
+			});			
+			gui.add(settings, 'bubble').name("Bulle").onChange(
+			function ( value ) {
+				shader.uniforms.bubble.value = value;
+				shader.depthWrite = !value;
+			});
+			gui.add(settings, 'hueChange').name("Gay Meter").min( 0 ).max( 2 ).onChange(
+			function ( value ) {
+				shader.uniforms.hueChange.value = value;
+			});
+			gui.add(settings, 'transparency').name("Transparence").min( 0 ).max( 5 ).onChange(
+			function ( value ) {
+				shader.uniforms.transparency.value = value;
 			});
 		}
 		
@@ -206,25 +264,54 @@
 				cameraPos : { value: camera.position },
 				baseColor: { value: [.0156,.62,.957] },
 				specularColor: { value: [1,1,1] },
+				backgroundColor: { value: [0,0,0] },
 				exp: { value: 20},
 				envMap: { type: "t", value: new THREE.TextureLoader().load( "textures/envMap.jpg" ) },
 				metallic: { value: true },
 				roughness: { value: 0 },
 				W: { value: [200,20] },
-				A: { value: .1 },
+				A: { value: 0 },
 				t: { value: 0 },
-				V: { value: 15 }
+				V: { value: 15 },
+				bubble: { value: false },
+				hueChange: { value: .66},
+				transparency: { value: 1.},
 			};
 
 			shader = new THREE.ShaderMaterial( {
 				vertexShader: document.querySelector( '#post-vert' ).textContent.trim(),
 				fragmentShader: document.querySelector( '#post-frag' ).textContent.trim(),
+  				transparent: true,
+				depthWrite: true,
+				blending: THREE.NormalBlending,
 				uniforms: uniforms
 			} );
 
 			shader.glslVersion = THREE.GLSL3;
 
-			object = new THREE.Mesh( new THREE.TorusKnotGeometry( 10, 3, 1000, 160 ), shader );			
+			object = new THREE.Mesh( new THREE.TorusKnotGeometry( 10, 3, 1000, 160 ), shader );
+			
+			new OBJLoader().load(
+				'tortue.obj',
+				function ( obj ) {					
+					obj.traverse(function (child) {
+						if (child.isMesh) {
+							let geometry = child.geometry;
+							geometry.rotateX(-Math.PI / 2);
+							tortue = new THREE.Mesh( child.geometry, shader );
+							tortue.scale.set(2,2,2);
+						}
+					});
+				},
+				function ( xhr ) {
+					console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
+				},
+				function ( error ) {
+					console.log( 'An error happened' );
+				}
+			);
+
+
 			object.position.set( 0, 0, 0 );
 			scene.add( object );
 
