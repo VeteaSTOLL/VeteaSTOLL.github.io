@@ -157,7 +157,7 @@
 		var uniforms;
 		let settings = { exp: 20, baseColor: [.0156,.62,.957], specularColor: [1,1,1], backgroundColor: [0,0,0], metallic: true, roughness: 0, taille: 20, amplitude: 0, vitesse: 15, modele:'thorus', bubble: false, hueChange: .66, transparency: 1};
 		
-		let tortue;
+		let tortue, fin;
 
 		init();
 		animate();
@@ -210,7 +210,7 @@
 			function ( value ) {
 				shader.uniforms.V.value = value;
 			} );
-			gui.add(settings, 'modele', [ 'thorus', 'cube', 'sphere', 'tortue' ] ).name("Modèle").onChange(
+			gui.add(settings, 'modele', [ 'thorus', 'cube', 'sphere', 'tortue', 'fin' ] ).name("Modèle").onChange(
 			function ( value ) {
 				scene.remove(object);
 				switch (value) {
@@ -230,6 +230,10 @@
 					object = tortue;
 					shader.uniforms.W.value = [settings.taille, settings.taille];
 					break;
+				case 'fin':
+					object = fin;
+					shader.uniforms.W.value = [settings.taille, settings.taille];
+					break;
 				}
 				scene.add(object);
 			});			
@@ -238,7 +242,7 @@
 				shader.uniforms.bubble.value = value;
 				shader.depthWrite = !value;
 			});
-			gui.add(settings, 'hueChange').name("Gay Meter").min( 0 ).max( 2 ).onChange(
+			gui.add(settings, 'hueChange').name("Arc-en-ciel").min( 0 ).max( 2 ).onChange(
 			function ( value ) {
 				shader.uniforms.hueChange.value = value;
 			});
@@ -300,6 +304,25 @@
 							geometry.rotateX(-Math.PI / 2);
 							tortue = new THREE.Mesh( child.geometry, shader );
 							tortue.scale.set(2,2,2);
+						}
+					});
+				},
+				function ( xhr ) {
+					console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
+				},
+				function ( error ) {
+					console.log( 'An error happened' );
+				}
+			);
+			new OBJLoader().load(
+				'fin.obj',
+				function ( obj ) {					
+					obj.traverse(function (child) {
+						if (child.isMesh) {
+							let geometry = child.geometry;
+							geometry.rotateX(-Math.PI / 2);
+							fin = new THREE.Mesh( child.geometry, shader );
+							fin.scale.set(20,20,20);
 						}
 					});
 				},
