@@ -10,6 +10,7 @@ export default defineConfig({
 				main: resolve(__dirname, 'index.html'),
 				shadercool: resolve(__dirname, 'shadercool.html'),
 				mandelbrot: resolve(__dirname, 'mandelbrot.html'),
+				iridescence: resolve(__dirname, 'iridescence.html'),
 			},
 		},
 	},
