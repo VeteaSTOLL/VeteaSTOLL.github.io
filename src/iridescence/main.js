@@ -1,10 +1,11 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'lil-gui';
 
 import vertexShader from './vertex.glsl?raw';
 import fragmentShader from './fragment.glsl?raw';
 
-let camera, scene, renderer, object;
+let camera, scene, renderer, object, controls;
 let shader;
 let uniforms;
 let settings = { modele: 'thorus', e: 2, n2: 1.33, C2: 0.01, thickness: 380, numberOfWaves: 32, saturation: 1.4 };
@@ -94,6 +95,14 @@ function init() {
 	renderer.setSize( window.innerWidth, window.innerHeight );
 	document.body.appendChild( renderer.domElement );
 
+	controls = new OrbitControls( camera, renderer.domElement );
+	controls.target.set( 0, 0, 0 );
+	controls.enableDamping = true;
+	controls.dampingFactor = 0.08;
+	controls.minDistance = 20;
+	controls.maxDistance = 500;
+	controls.update();
+
 	window.addEventListener( 'resize', onWindowResize );
 }
 
@@ -111,7 +120,8 @@ function animate() {
 function render() {
 	const timer = Date.now() * 0.001;
 	shader.uniforms.t.value = timer;
-	object.rotation.y = timer * 0.3;
+
+	controls.update();
 
 	renderer.render( scene, camera );
 }
