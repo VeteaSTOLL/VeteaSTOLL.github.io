@@ -5,59 +5,100 @@ import { GUI } from 'lil-gui';
 import vertexShader from './vertex.glsl?raw';
 import fragmentShader from './fragment.glsl?raw';
 
+const BELCOUR = 'Belcour–Barla';
+const REFERENCE = 'Référence spectrale';
+
 let camera, scene, renderer, object, controls;
 let shader;
 let uniforms;
-let settings = { modele: 'thorus', e: 2, n2: 1.33, C2: 0.01, thickness: 380, numberOfWaves: 32, saturation: 1.4 };
+let settings = {
+	modele: 'torus',
+	mode: BELCOUR,
+	e: 8,
+	n2: 1.33,
+	C2: 0.01,
+	thickness: 380,
+	numberOfWaves: 32,
+	saturation: 1,
+	// La réflectance iridescente vaut ~0.15 : sans exposition l'objet serait très sombre.
+	exposure: 5,
+	// Réflectance de la couche du dessous. Contre-intuitivement, un fond TRÈS réfléchissant
+	// (proche du blanc) tue les couleurs : les deux ondes qui interfèrent ont alors des
+	// amplitudes très déséquilibrées, donc des franges peu visibles. Mesuré : #f2f2f2 donne
+	// un chroma de 0.19 (gris), #6c6c6c le maximise à 0.87.
+	baseF0: '#6c6c6c',
+	lightPos: { x: 30, y: 30, z: 30 },
+};
 
 init();
-animate();
 initGui();
+animate();
 
 function initGui() {
 	const gui = new GUI();
-	gui.add(settings, 'e').name("Exposant").min( 1 ).max( 10 ).onChange(
+
+	// Tous les curseurs ne font que recopier settings[clé] dans uniforms[clé]
+	const bind = ( key, label, min, max, step ) => {
+		const ctrl = gui.add( settings, key ).name( label ).min( min ).max( max );
+		if ( step !== undefined ) ctrl.step( step );
+		return ctrl.onChange( value => { uniforms[ key ].value = value; } );
+	};
+
+	bind( 'e', "Exposant", 1, 200 );
+	bind( 'n2', "Indice n2", 1, 2 );
+	bind( 'thickness', "Épaisseur (nm)", 100, 1000 );
+	bind( 'saturation', "Saturation", 0, 3, 0.01 );
+	bind( 'exposure', "Exposition", 0, 20, 0.01 );
+
+	// Ces deux-là n'ont de sens que pour l'intégration explicite : la forme analytique suppose
+	// une différence de marche indépendante de λ, donc un milieu non dispersif.
+	const cauchy = bind( 'C2', "Constante de Cauchy C2", 0, 2 );
+	const waves = bind( 'numberOfWaves', "Nombre de longueurs d'onde", 1, 128, 1 );
+
+	gui.add( settings, 'mode', [ BELCOUR, REFERENCE ] ).name( "Modèle spectral" ).onChange(
 	function ( value ) {
-		shader.uniforms.e.value = value;
+		const reference = value === REFERENCE;
+		uniforms.useReference.value = reference;
+		cauchy.show( reference );
+		waves.show( reference );
 	} );
-	gui.add(settings, 'n2').name("Indice n2").min( 1 ).max( 2 ).onChange(
+
+	gui.addColor( settings, 'baseF0' ).name( "Couche réflective" ).onChange(
 	function ( value ) {
-		shader.uniforms.n2.value = value;
+		uniforms.baseF0.value.set( value );
 	} );
-	gui.add(settings, 'C2').name("Constante de Cauchy C2").min( 0 ).max( 2 ).onChange(
-	function ( value ) {
-		shader.uniforms.C2.value = value;
-	} );
-	gui.add(settings, 'thickness').name("Épaisseur (nm)").min( 100 ).max( 1000 ).onChange(
-	function ( value ) {
-		shader.uniforms.thickness.value = value;
-	} );
-	gui.add(settings, 'numberOfWaves').name("Nombre de longueurs d'onde").min( 1 ).max( 128 ).step( 1 ).onChange(
-	function ( value ) {
-		shader.uniforms.numberOfWaves.value = value;
-	} );
-	gui.add(settings, 'saturation').name("Saturation").min( 0 ).max( 3 ).step( 0.01 ).onChange(
-	function ( value ) {
-		shader.uniforms.saturation.value = value;
-	} );
-	gui.add(settings, 'modele', ['sphere', 'cube', 'thorus']).name("Modèle").onChange(
-	function ( value ) {
-		scene.remove(object);
-		object = new THREE.Mesh( createGeometry( value ), shader );
-		scene.add(object);
-	});
+
+	const lumiere = gui.addFolder( "Lumière" );
+	for ( const axe of [ 'x', 'y', 'z' ] ) {
+		lumiere.add( settings.lightPos, axe ).name( axe.toUpperCase() ).min( -100 ).max( 100 ).onChange(
+		function () {
+			uniforms.lightPos.value.copy( settings.lightPos );
+		} );
+	}
+
+	gui.add( settings, 'modele', [ 'sphere', 'cube', 'torus' ] ).name( "Modèle" ).onChange( setGeometry );
+
+	cauchy.show( settings.mode === REFERENCE );
+	waves.show( settings.mode === REFERENCE );
 }
 
 function createGeometry( modele ) {
 	switch (modele) {
 	case 'cube':
 		return new THREE.BoxGeometry( 16, 16, 16 );
-	case 'thorus':
-		return new THREE.TorusKnotGeometry( 10, 3, 1000, 160 );
+	case 'torus':
+		return new THREE.TorusKnotGeometry( 10, 3, 400, 64 );
 	case 'sphere':
 	default:
 		return new THREE.SphereGeometry( 13, 64, 32 );
 	}
+}
+
+function setGeometry( modele ) {
+	scene.remove( object );
+	object.geometry.dispose(); // sinon l'ancienne géométrie reste en mémoire GPU
+	object = new THREE.Mesh( createGeometry( modele ), shader );
+	scene.add( object );
 }
 
 function init() {
@@ -66,16 +107,18 @@ function init() {
 
 	scene = new THREE.Scene();
 
+	// cameraPosition n'est pas déclaré ici : three.js le fournit d'office à tout ShaderMaterial
 	uniforms = {
-		cameraPos: { value: camera.position },
-		lightPos: { value: new THREE.Vector3(30, 30, 30) },
+		lightPos: { value: new THREE.Vector3().copy( settings.lightPos ) },
 		e: { value: settings.e },
 		n2: { value: settings.n2 },
 		C2: { value: settings.C2 },
+		baseF0: { value: new THREE.Color( settings.baseF0 ) },
 		thickness: { value: settings.thickness },
 		numberOfWaves: { value: settings.numberOfWaves },
+		useReference: { value: settings.mode === REFERENCE },
 		saturation: { value: settings.saturation },
-		t: { value: 0 },
+		exposure: { value: settings.exposure },
 	};
 
 	shader = new THREE.ShaderMaterial( {
@@ -87,11 +130,11 @@ function init() {
 	shader.glslVersion = THREE.GLSL3;
 
 	object = new THREE.Mesh( createGeometry( settings.modele ), shader );
-	object.position.set( 0, 0, 0 );
 	scene.add( object );
 
 	renderer = new THREE.WebGLRenderer( { antialias: true } );
-	renderer.setPixelRatio( window.devicePixelRatio );
+	// le shader est lourd en ALU : au-delà de 2 on rend 4 à 9x trop de pixels pour rien
+	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
 	renderer.setSize( window.innerWidth, window.innerHeight );
 	document.body.appendChild( renderer.domElement );
 
@@ -118,9 +161,6 @@ function animate() {
 }
 
 function render() {
-	const timer = Date.now() * 0.001;
-	shader.uniforms.t.value = timer;
-
 	controls.update();
 
 	renderer.render( scene, camera );

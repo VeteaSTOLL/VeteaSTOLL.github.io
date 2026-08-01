@@ -1,6 +1,6 @@
 # VeteaSTOLL.github.io
 
-Site perso avec des démos Three.js (shaders custom, fractale de Mandelbrot). Le projet utilise [Vite](https://vitejs.dev/) comme bundler et [npm](https://www.npmjs.com/) pour gérer les dépendances (`three`, `lil-gui`), au lieu de fichiers vendored à la main.
+Site perso avec des démos Three.js (shaders custom, iridescence de couche mince, fractale de Mandelbrot). Le projet utilise [Vite](https://vitejs.dev/) comme bundler et [npm](https://www.npmjs.com/) pour gérer les dépendances (`three`, `lil-gui`), au lieu de fichiers vendored à la main.
 
 ## Structure du projet
 
@@ -9,13 +9,18 @@ Site perso avec des démos Three.js (shaders custom, fractale de Mandelbrot). Le
 ├── index.html              # page d'accueil (liens vers les démos)
 ├── shadercool.html          # page de la démo "shader cool"
 ├── mandelbrot.html          # page de la démo Mandelbrot
+├── iridescence.html         # page de la démo iridescence
 ├── main.css                 # style partagé
 ├── src/
 │   ├── shadercool/
 │   │   ├── main.js          # logique Three.js + GUI de la démo
 │   │   ├── vertex.glsl       # vertex shader
 │   │   └── fragment.glsl     # fragment shader
-│   └── mandelbrot/
+│   ├── mandelbrot/
+│   │   ├── main.js
+│   │   ├── vertex.glsl
+│   │   └── fragment.glsl
+│   └── iridescence/
 │       ├── main.js
 │       ├── vertex.glsl
 │       └── fragment.glsl
@@ -42,7 +47,14 @@ npm install
 npm run dev
 ```
 
-Lance un serveur de dev Vite avec rechargement à chaud. Par défaut sur http://localhost:5173, avec des liens directs vers `/index.html`, `/shadercool.html` et `/mandelbrot.html`.
+Lance un serveur de dev Vite avec rechargement à chaud. Par défaut sur http://localhost:5173, avec des liens directs vers `/index.html`, `/shadercool.html`, `/mandelbrot.html` et `/iridescence.html`.
+
+### Démo iridescence
+
+Simulation d'une couche mince semi-transparente posée sur une couche réflective (bulle de savon, film d'huile). Deux modèles spectraux sont disponibles depuis la GUI :
+
+- **Belcour–Barla** (défaut) — l'intégrale spectrale est évaluée analytiquement dans l'espace de Fourier ([Belcour & Barla 2017](https://belcour.github.io/blog/research/2017/05/01/brdf-thin-film.html)). Coût constant, anti-aliasing spectral gratuit, mais suppose un milieu non dispersif : le curseur de Cauchy `C2` est donc masqué.
+- **Référence spectrale** — intégration explicite sur *N* longueurs d'onde, avec les fonctions colorimétriques CIE 1931 approchées par [Wyman et al. 2013](http://jcgt.org/published/0002/02/01/). Bien plus coûteuse, mais gère la dispersion de Cauchy et sert à valider le mode analytique : à `C2 = 0` et 128 longueurs d'onde, les deux modes doivent donner la même image.
 
 ## Build de production
 
