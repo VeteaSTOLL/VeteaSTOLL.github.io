@@ -7,7 +7,7 @@ import fragmentShader from './fragment.glsl?raw';
 let camera, scene, renderer, object;
 let shader;
 let uniforms;
-let settings = { modele: 'thorus', e: 1, n1: 1, n2: 1.33, thickness: 330 };
+let settings = { modele: 'thorus', e: 1, n2: 1.33, C2: 0.01, thickness: 330 };
 
 init();
 animate();
@@ -19,13 +19,13 @@ function initGui() {
 	function ( value ) {
 		shader.uniforms.e.value = value;
 	} );
-	gui.add(settings, 'n1').name("Indice n1").min( 1 ).max( 2 ).onChange(
-	function ( value ) {
-		shader.uniforms.n1.value = value;
-	} );
 	gui.add(settings, 'n2').name("Indice n2").min( 1 ).max( 2 ).onChange(
 	function ( value ) {
 		shader.uniforms.n2.value = value;
+	} );
+	gui.add(settings, 'C2').name("Constante de Cauchy C2").min( 0 ).max( 2 ).onChange(
+	function ( value ) {
+		shader.uniforms.C2.value = value;
 	} );
 	gui.add(settings, 'thickness').name("Épaisseur (nm)").min( 100 ).max( 1000 ).onChange(
 	function ( value ) {
@@ -61,8 +61,8 @@ function init() {
 		cameraPos: { value: camera.position },
 		lightPos: { value: new THREE.Vector3(30, 30, 30) },
 		e: { value: settings.e },
-		n1: { value: settings.n1 },
 		n2: { value: settings.n2 },
+		C2: { value: settings.C2 },
 		thickness: { value: settings.thickness },
 		t: { value: 0 },
 	};
