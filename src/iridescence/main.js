@@ -16,7 +16,7 @@ initGui();
 
 function initGui() {
 	const gui = new GUI();
-	gui.add(settings, 'e').name("Exposant").min( 1 ).max( 100 ).onChange(
+	gui.add(settings, 'e').name("Exposant").min( 1 ).max( 10 ).onChange(
 	function ( value ) {
 		shader.uniforms.e.value = value;
 	} );

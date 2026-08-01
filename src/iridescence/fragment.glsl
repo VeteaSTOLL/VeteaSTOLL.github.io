@@ -26,7 +26,6 @@ uniform float saturation;
 
 const float PI = 3.1415926536;
 
-const float magnitude = 1000000.;
 
 // Approximations analytiques (gaussiennes multi-lobes) des fonctions colorimétriques CIE 1931.
 // Source - Chris Wyman, Peter-Pike Sloan, Peter Shirley,
@@ -64,7 +63,7 @@ float dotProduct2Radiants(float dp) {
 }
 
 float trueReflectiveIndex(float n0, float C, float waveLength) {
-	return n0 + C * magnitude / (waveLength * waveLength);
+	return n0 + C / pow(waveLength/1000., 2.);
 }
 
 // Renvoie sin(θr) via la loi de Snell — pas un angle
