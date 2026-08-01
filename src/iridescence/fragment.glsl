@@ -18,12 +18,42 @@ uniform float C2;
 // épaisseur entre la couche semi-transparente et la couche réflective [100, 1000] (nm)
 uniform float thickness;
 
-const float spectrumStart=400., spectrumEnd=800.;
+const float spectrumStart=380., spectrumEnd=780.;
 uniform float numberOfWaves;
 
 const float PI = 3.1415926536;
 
 const float magnitude = 1000000.;
+
+// Source - https://stackoverflow.com/a/14917481
+// Posted by Tarc, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-07-31, License - CC BY-SA 4.0
+
+const float Gamma = 0.80;
+
+// Taken from Earl F. Glynn's web page:
+// http://www.efg2.com/Lab/ScienceAndEngineering/Spectra.htm
+vec3 waveLengthToRGB(float Wavelength) {
+	vec3 rgb;
+
+	if((Wavelength >= 380.) && (Wavelength < 440.)) {
+		rgb = vec3(-(Wavelength - 440.) / (440. - 380.), 0., 1.);
+	} else if((Wavelength >= 440.) && (Wavelength < 490.)) {
+		rgb = vec3(0., (Wavelength - 440.) / (490. - 440.), 1.);
+	} else if((Wavelength >= 490.) && (Wavelength < 510.)) {
+		rgb = vec3(0., 1., -(Wavelength - 510.) / (510. - 490.));
+	} else if((Wavelength >= 510.) && (Wavelength < 580.)) {
+		rgb = vec3((Wavelength - 510.) / (580. - 510.), 1., 0.);
+	} else if((Wavelength >= 580.) && (Wavelength < 645.)) {
+		rgb = vec3(1., -(Wavelength - 645.) / (645. - 580.), 0.);
+	} else if((Wavelength >= 645.) && (Wavelength < 781.)) {
+		rgb = vec3(1., 0., 0.);
+	} else {
+		rgb = vec3(0.);
+	}
+
+	return pow(rgb, vec3(Gamma));
+}
 
 float dotProduct2Radiants(float dp) {
 	return PI * (1.-dp) / 2.;
@@ -56,23 +86,18 @@ void main() {
 	float viewDotNormal = dot(-viewDirection, vNormal);
 	vec3 reflection = normalize((-viewDirection)-2.* viewDotNormal * vNormal);
 
-	float intensity = dot(lightDirection, -reflection);
-	intensity = pow(clamp(intensity, 0., 1.), e);
+	float lightItensity = dot(lightDirection, -reflection);
+	lightItensity = pow(clamp(lightItensity, 0., 1.), e);
 
 
 	float incidence = dot(-lightDirection, vNormal);
 
-	/*
-	float step = (spectrumEnd - spectrumStart) / numberOfWaves;
-	for(float l=spectrumStart; l<spectrumEnd; l+=step) { 
-		waveLengthIntensity(l, incidence, n1, n2, thickness);
+	vec3 finalColor = vec3(0.);
+	float waveStep = (spectrumEnd - spectrumStart) / numberOfWaves;
+	for(float l=spectrumStart; l<spectrumEnd; l+=waveStep) {
+		float I = waveLengthIntensity(l, incidence, n1, n2, thickness);
+		finalColor += waveLengthToRGB(l) * I / numberOfWaves;
 	}
-	*/
-
-	float r = waveLengthIntensity(700., incidence, n1, n2, thickness);
-	float g = waveLengthIntensity(530., incidence, n1, n2, thickness);
-	float b = waveLengthIntensity(465., incidence, n1, n2, thickness);
-	vec3 color = vec3(r, g, b);
-
-	outColor = vec4(intensity * color, 1.);
+	
+	outColor = vec4(lightItensity * finalColor, 1.);
 }
