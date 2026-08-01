@@ -7,7 +7,7 @@ import fragmentShader from './fragment.glsl?raw';
 let camera, scene, renderer, object;
 let shader;
 let uniforms;
-let settings = { modele: 'sphere' };
+let settings = { modele: 'sphere', exp: 20 };
 
 init();
 animate();
@@ -15,6 +15,10 @@ initGui();
 
 function initGui() {
 	const gui = new GUI();
+	gui.add(settings, 'exp').name("Exposant").min( 1 ).max( 100 ).onChange(
+	function ( value ) {
+		shader.uniforms.exp.value = value;
+	} );
 	gui.add(settings, 'modele', ['sphere', 'cube', 'thorus']).name("Modèle").onChange(
 	function ( value ) {
 		scene.remove(object);
@@ -41,6 +45,8 @@ function init() {
 
 	uniforms = {
 		cameraPos: { value: camera.position },
+		lightPos: { value: new THREE.Vector3(30, 30, 30) },
+		exp: { value: settings.exp },
 		t: { value: 0 },
 	};
 
