@@ -7,7 +7,7 @@ import fragmentShader from './fragment.glsl?raw';
 let camera, scene, renderer, object;
 let shader;
 let uniforms;
-let settings = { modele: 'sphere', exp: 20, n1: 1, n2: 1.33, thickness: 500 };
+let settings = { modele: 'thorus', e: 1, n1: 1, n2: 1.33, thickness: 330 };
 
 init();
 animate();
@@ -15,9 +15,9 @@ initGui();
 
 function initGui() {
 	const gui = new GUI();
-	gui.add(settings, 'exp').name("Exposant").min( 1 ).max( 100 ).onChange(
+	gui.add(settings, 'e').name("Exposant").min( 1 ).max( 100 ).onChange(
 	function ( value ) {
-		shader.uniforms.exp.value = value;
+		shader.uniforms.e.value = value;
 	} );
 	gui.add(settings, 'n1').name("Indice n1").min( 1 ).max( 2 ).onChange(
 	function ( value ) {
@@ -34,19 +34,21 @@ function initGui() {
 	gui.add(settings, 'modele', ['sphere', 'cube', 'thorus']).name("Modèle").onChange(
 	function ( value ) {
 		scene.remove(object);
-		switch (value) {
-		case 'sphere':
-			object = new THREE.Mesh( new THREE.SphereGeometry( 13, 64, 32 ), shader );
-			break;
-		case 'cube':
-			object = new THREE.Mesh( new THREE.BoxGeometry( 16, 16, 16 ), shader );
-			break;
-		case 'thorus':
-			object = new THREE.Mesh( new THREE.TorusKnotGeometry( 10, 3, 1000, 160 ), shader );
-			break;
-		}
+		object = new THREE.Mesh( createGeometry( value ), shader );
 		scene.add(object);
 	});
+}
+
+function createGeometry( modele ) {
+	switch (modele) {
+	case 'cube':
+		return new THREE.BoxGeometry( 16, 16, 16 );
+	case 'thorus':
+		return new THREE.TorusKnotGeometry( 10, 3, 1000, 160 );
+	case 'sphere':
+	default:
+		return new THREE.SphereGeometry( 13, 64, 32 );
+	}
 }
 
 function init() {
@@ -58,7 +60,7 @@ function init() {
 	uniforms = {
 		cameraPos: { value: camera.position },
 		lightPos: { value: new THREE.Vector3(30, 30, 30) },
-		exp: { value: settings.exp },
+		e: { value: settings.e },
 		n1: { value: settings.n1 },
 		n2: { value: settings.n2 },
 		thickness: { value: settings.thickness },
@@ -73,7 +75,7 @@ function init() {
 
 	shader.glslVersion = THREE.GLSL3;
 
-	object = new THREE.Mesh( new THREE.SphereGeometry( 13, 64, 32 ), shader );
+	object = new THREE.Mesh( createGeometry( settings.modele ), shader );
 	object.position.set( 0, 0, 0 );
 	scene.add( object );
 
