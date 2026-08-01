@@ -21,39 +21,43 @@ uniform float thickness;
 const float spectrumStart=380., spectrumEnd=780.;
 uniform float numberOfWaves;
 
+// 1. = rendu physique non retouché
+uniform float saturation;
+
 const float PI = 3.1415926536;
 
 const float magnitude = 1000000.;
 
-// Source - https://stackoverflow.com/a/14917481
-// Posted by Tarc, modified by community. See post 'Timeline' for change history
-// Retrieved 2026-07-31, License - CC BY-SA 4.0
+// Approximations analytiques (gaussiennes multi-lobes) des fonctions colorimétriques CIE 1931.
+// Source - Chris Wyman, Peter-Pike Sloan, Peter Shirley,
+// "Simple Analytic Approximations to the CIE XYZ Color Matching Functions",
+// Journal of Computer Graphics Techniques (JCGT), vol. 2, no. 2, 1-11, 2013.
+// http://jcgt.org/published/0002/02/01/
+vec3 waveLengthToXYZ(float waveLength) {
+	float t1, t2, t3;
 
-const float Gamma = 0.80;
+	t1 = (waveLength - 442.0) * ((waveLength < 442.0) ? 0.0624 : 0.0374);
+	t2 = (waveLength - 599.8) * ((waveLength < 599.8) ? 0.0264 : 0.0323);
+	t3 = (waveLength - 501.1) * ((waveLength < 501.1) ? 0.0490 : 0.0382);
+	float x = 0.362 * exp(-0.5 * t1 * t1) + 1.056 * exp(-0.5 * t2 * t2) - 0.065 * exp(-0.5 * t3 * t3);
 
-// Taken from Earl F. Glynn's web page:
-// http://www.efg2.com/Lab/ScienceAndEngineering/Spectra.htm
-vec3 waveLengthToRGB(float Wavelength) {
-	vec3 rgb;
+	t1 = (waveLength - 568.8) * ((waveLength < 568.8) ? 0.0213 : 0.0247);
+	t2 = (waveLength - 530.9) * ((waveLength < 530.9) ? 0.0613 : 0.0322);
+	float y = 0.821 * exp(-0.5 * t1 * t1) + 0.286 * exp(-0.5 * t2 * t2);
 
-	if((Wavelength >= 380.) && (Wavelength < 440.)) {
-		rgb = vec3(-(Wavelength - 440.) / (440. - 380.), 0., 1.);
-	} else if((Wavelength >= 440.) && (Wavelength < 490.)) {
-		rgb = vec3(0., (Wavelength - 440.) / (490. - 440.), 1.);
-	} else if((Wavelength >= 490.) && (Wavelength < 510.)) {
-		rgb = vec3(0., 1., -(Wavelength - 510.) / (510. - 490.));
-	} else if((Wavelength >= 510.) && (Wavelength < 580.)) {
-		rgb = vec3((Wavelength - 510.) / (580. - 510.), 1., 0.);
-	} else if((Wavelength >= 580.) && (Wavelength < 645.)) {
-		rgb = vec3(1., -(Wavelength - 645.) / (645. - 580.), 0.);
-	} else if((Wavelength >= 645.) && (Wavelength < 781.)) {
-		rgb = vec3(1., 0., 0.);
-	} else {
-		rgb = vec3(0.);
-	}
+	t1 = (waveLength - 437.0) * ((waveLength < 437.0) ? 0.0845 : 0.0278);
+	t2 = (waveLength - 459.0) * ((waveLength < 459.0) ? 0.0385 : 0.0725);
+	float z = 1.217 * exp(-0.5 * t1 * t1) + 0.681 * exp(-0.5 * t2 * t2);
 
-	return pow(rgb, vec3(Gamma));
+	return vec3(x, y, z);
 }
+
+// Matrice XYZ -> sRGB linéaire (primaires sRGB, point blanc D65)
+const mat3 XYZ_TO_SRGB = mat3(
+	 3.2406, -0.9689,  0.0557,
+	-1.5372,  1.8758, -0.2040,
+	-0.4986,  0.0415,  1.0570
+);
 
 float dotProduct2Radiants(float dp) {
 	return PI * (1.-dp) / 2.;
@@ -63,7 +67,8 @@ float trueReflectiveIndex(float n0, float C, float waveLength) {
 	return n0 + C * magnitude / (waveLength * waveLength);
 }
 
-float refractionAngle(float incidence, float n1, float n2, float waveLength) {
+// Renvoie sin(θr) via la loi de Snell — pas un angle
+float refractionSine(float incidence, float n1, float n2, float waveLength) {
 	return trueReflectiveIndex(n1, C1, waveLength) * sin(dotProduct2Radiants(incidence)) / trueReflectiveIndex(n2, C2, waveLength);
 }
 
@@ -73,9 +78,11 @@ float interference(float waveLength, float phase) {
 }
 
 float waveLengthIntensity(float waveLength, float incidence, float n1, float n2, float thickness) {
-	float refraction = refractionAngle(incidence, n1, n2, waveLength);
-	// en nm
-	float phase = 2. * thickness / sqrt(1. - refraction);
+	float sinR = refractionSine(incidence, n1, n2, waveLength);
+	// max(0.) : garde-fou contre la réflexion totale interne (sinon NaN)
+	float cosR = sqrt(max(0., 1. - sinR * sinR));
+	// différence de marche, en nm
+	float phase = 2. * trueReflectiveIndex(n2, C2, waveLength) * thickness * cosR;
 	return interference(waveLength, phase);
 }
 
@@ -92,12 +99,27 @@ void main() {
 
 	float incidence = dot(-lightDirection, vNormal);
 
-	vec3 finalColor = vec3(0.);
+	vec3 xyz = vec3(0.);
+	float yNorm = 0.;
+
 	float waveStep = (spectrumEnd - spectrumStart) / numberOfWaves;
 	for(float l=spectrumStart; l<spectrumEnd; l+=waveStep) {
-		float I = waveLengthIntensity(l, incidence, n1, n2, thickness);
-		finalColor += waveLengthToRGB(l) * I / numberOfWaves;
+		vec3 cmf = waveLengthToXYZ(l);
+		xyz += cmf * waveLengthIntensity(l, incidence, n1, n2, thickness);
+		yNorm += cmf.y;
 	}
-	
-	outColor = vec4(lightItensity * finalColor, 1.);
+
+	// Normalisation par l'intégrale de ȳ : un spectre plat donne Y = 1 (blanc),
+	// quels que soient le nombre d'échantillons et les bornes du spectre.
+	xyz /= yNorm;
+
+	vec3 rgb = max(XYZ_TO_SRGB * xyz, 0.); // clamp des couleurs hors-gamut sRGB
+
+	float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+	rgb = max(mix(vec3(luma), rgb, saturation), 0.);
+
+	rgb *= lightItensity;
+
+	// Encodage sRGB en tout dernier, après l'intégration
+	outColor = vec4(pow(rgb, vec3(1./2.2)), 1.);
 }

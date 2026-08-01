@@ -7,7 +7,7 @@ import fragmentShader from './fragment.glsl?raw';
 let camera, scene, renderer, object;
 let shader;
 let uniforms;
-let settings = { modele: 'thorus', e: 1, n2: 1.33, C2: 0.01, thickness: 330, numberOfWaves: 32 };
+let settings = { modele: 'thorus', e: 2, n2: 1.33, C2: 0.01, thickness: 380, numberOfWaves: 32, saturation: 1.4 };
 
 init();
 animate();
@@ -34,6 +34,10 @@ function initGui() {
 	gui.add(settings, 'numberOfWaves').name("Nombre de longueurs d'onde").min( 1 ).max( 128 ).step( 1 ).onChange(
 	function ( value ) {
 		shader.uniforms.numberOfWaves.value = value;
+	} );
+	gui.add(settings, 'saturation').name("Saturation").min( 0 ).max( 3 ).step( 0.01 ).onChange(
+	function ( value ) {
+		shader.uniforms.saturation.value = value;
 	} );
 	gui.add(settings, 'modele', ['sphere', 'cube', 'thorus']).name("Modèle").onChange(
 	function ( value ) {
@@ -69,6 +73,7 @@ function init() {
 		C2: { value: settings.C2 },
 		thickness: { value: settings.thickness },
 		numberOfWaves: { value: settings.numberOfWaves },
+		saturation: { value: settings.saturation },
 		t: { value: 0 },
 	};
 
