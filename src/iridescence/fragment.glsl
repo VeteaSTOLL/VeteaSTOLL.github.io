@@ -35,6 +35,7 @@ uniform float exposure;
 // paillettes
 uniform float glitterAmount; // [0, 1] : 0 = pas de paillettes, 1 = couvert de paillettes
 uniform float glitterVariance; // [0, 1] : 0 = paillettes invisibles, 1 = paillettes très différentes de la surface
+uniform float glitterSize; // [1, +oo]
 
 const float PI = 3.1415926536;
 
@@ -295,10 +296,14 @@ vec3 randomV3(vec2 uv) {
 
 
 void main() {
+	// glitterSize = nombre de cellules par unité UV (convention "maille" : plus grand = plus fin)
+	float p = glitterSize / 1024.;
+	vec2 lowresUv = floor(vUv / p) * p;
+
 	vec3 noisyNormal;
-	
-	if (randf(vUv) < pow(glitterAmount, 5.)) {
-		noisyNormal = mix(vNormal, randomV3(vUv), glitterVariance);
+
+	if (randf(lowresUv) < pow(glitterAmount, 5.)) {
+		noisyNormal = mix(vNormal, randomV3(lowresUv), glitterVariance);
 	} else {
 		noisyNormal = vNormal;
 	}

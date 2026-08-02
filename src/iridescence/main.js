@@ -30,6 +30,7 @@ let settings = {
 	lightPos: { x: 30, y: 30, z: 30 },
 	glitterAmount: 0,
 	glitterVariance: 0,
+	glitterSize: 10,
 };
 
 init();
@@ -53,6 +54,7 @@ function initGui() {
 	bind( 'exposure', "Exposition", 0, 20, 0.01 );
 	bind( 'glitterAmount', "Paillettes", 0, 1, 0.01 );
 	bind( 'glitterVariance', "Variance des paillettes", 0, 1, 0.01 );
+	bind( 'glitterSize', "Taille des paillettes", 1, 50, 1 );
 
 	// Ces deux-là n'ont de sens que pour l'intégration explicite : la forme analytique suppose
 	// une différence de marche indépendante de λ, donc un milieu non dispersif.
@@ -125,6 +127,7 @@ function init() {
 		exposure: { value: settings.exposure },
 		glitterAmount: { value: settings.glitterAmount },
 		glitterVariance: { value: settings.glitterVariance },
+		glitterSize: { value: settings.glitterSize },
 	};
 
 	shader = new THREE.ShaderMaterial( {
