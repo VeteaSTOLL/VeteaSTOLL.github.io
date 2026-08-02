@@ -5,7 +5,7 @@ import { GUI } from 'lil-gui';
 import vertexShader from './vertex.glsl?raw';
 import fragmentShader from './fragment.glsl?raw';
 
-const BELCOUR = 'Belcour–Barla';
+const BELCOUR = 'Belcour-Barla';
 const REFERENCE = 'Référence spectrale';
 
 let camera, scene, renderer, object, controls;
@@ -30,7 +30,7 @@ let settings = {
 	lightPos: { x: 30, y: 30, z: 30 },
 	glitterAmount: 0,
 	glitterVariance: 0,
-	glitterSize: 10,
+	glitterSize: 30,
 };
 
 init();
@@ -54,7 +54,7 @@ function initGui() {
 	bind( 'exposure', "Exposition", 0, 20, 0.01 );
 	bind( 'glitterAmount', "Paillettes", 0, 1, 0.01 );
 	bind( 'glitterVariance', "Variance des paillettes", 0, 1, 0.01 );
-	bind( 'glitterSize', "Taille des paillettes", 1, 50, 1 );
+	bind( 'glitterSize', "Finesse des paillettes", 1, 500, 1 );
 
 	// Ces deux-là n'ont de sens que pour l'intégration explicite : la forme analytique suppose
 	// une différence de marche indépendante de λ, donc un milieu non dispersif.

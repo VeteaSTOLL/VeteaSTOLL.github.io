@@ -1,6 +1,6 @@
 in vec3 vNormal;
 in vec3 vWorldPos;
-in vec2 vUv;
+in vec3 vObjectPos;
 
 out vec4 outColor;
 
@@ -33,9 +33,13 @@ uniform float saturation;
 uniform float exposure;
 
 // paillettes
-uniform float glitterAmount; // [0, 1] : 0 = pas de paillettes, 1 = couvert de paillettes
-uniform float glitterVariance; // [0, 1] : 0 = paillettes invisibles, 1 = paillettes très différentes de la surface
-uniform float glitterSize; // [1, +oo]
+uniform float glitterAmount; // [0, 1] : fraction des cellules qui portent une paillette
+uniform float glitterVariance; // [0, 1] : 0 = paillettes alignées sur la surface (invisibles), 1 = orientations quelconques
+uniform float glitterSize; // nombre de paillettes en travers de l'objet : plus grand = plus fines
+
+// Diamètre approximatif des géométries de la scène (sphère r=13, nœud de tore ~13, cube 16).
+// Sert à donner à glitterSize une signification indépendante de la géométrie affichée.
+const float OBJECT_SIZE = 26.;
 
 const float PI = 3.1415926536;
 
@@ -276,40 +280,86 @@ vec3 linearToSRGB(vec3 c) {
 	return mix(12.92 * c, 1.055 * pow(c, vec3(1. / 2.4)) - 0.055, step(0.0031308, c));
 }
 
-// Source - https://stackoverflow.com/a/4275343
-// Posted by appas, modified by community. See post 'Timeline' for change history
-// Retrieved 2026-08-01, License - CC BY-SA 4.0
+// ---------------------------------------------------------------------------------------------
+// Paillettes — pavage de Voronoï en espace objet
+//
+// Une grille régulière en UV donne des paillettes carrées, et étirées partout où la
+// paramétrisation l'est — le nœud de tore, dont les UV s'enroulent le long du tube, en est un
+// cas d'école. On partitionne donc l'espace 3D en cellules de Voronoï : la trace d'un polyèdre
+// de Voronoï sur la surface est un polygone irrégulier, et sa taille ne dépend que de la
+// distance entre germes. Forme et échelle deviennent donc indépendantes du dépliage UV.
+// ---------------------------------------------------------------------------------------------
 
-// donne un float aléatoire entre 0 et 1 en fonction des coordonées uv
-float randf(vec2 co){
-    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+// Hash 3D -> 3D sans sinus.
+// Source - Dave Hoskins, "Hash without Sine", https://www.shadertoy.com/view/4djSRW (MIT)
+//
+// Le hash sin/fract classique s'effondre ici : dot(cellule, vec3(127.1, ...)) atteint plusieurs
+// milliers, et un float32 ne garde alors qu'une poignée de bits sous la virgule. sin() y perd
+// sa décorrélation et se met à renvoyer des valeurs voisines pour des cellules voisines — d'où
+// des amas de paillettes. Le fract() initial ramène tout dans [0,1[ et supprime le problème.
+vec3 hash33(vec3 p) {
+	p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+	p += dot(p, p.yxz + 33.33);
+	return fract((p.xxy + p.yxx) * p.zyx);
 }
 
+// Coordonnées entières de la cellule de Voronoï contenant p
+vec3 voronoiCell(vec3 p) {
+	vec3 base = floor(p);
+	vec3 nearest = base;
+	float best = 1e9;
 
-// donne une direction random en fonction des coodonées UV
-vec3 randomV3(vec2 uv) {
-	float x = fract(sin(dot(uv, vec2(127.1, 311.7))) * 43758.5453);
-	float y = fract(sin(dot(uv, vec2(269.5, 183.3))) * 43758.5453);
-	float z = fract(sin(dot(uv, vec2(113.5, 271.9))) * 43758.5453);
-	return vec3(x, y, z);
+	// Le germe le plus proche n'est pas forcément celui de la cellule de grille qui contient p :
+	// avec un jitter d'une cellule entière, il faut tester les 27 voisines.
+	for (int i = -1; i <= 1; ++i)
+	for (int j = -1; j <= 1; ++j)
+	for (int k = -1; k <= 1; ++k) {
+		vec3 cell = base + vec3(i, j, k);
+		vec3 delta = cell + hash33(cell) - p; // germe jitteré à l'intérieur de sa cellule
+		float d = dot(delta, delta); // comparer les carrés évite 27 sqrt()
+		if (d < best) { best = d; nearest = cell; }
+	}
+
+	return nearest;
 }
 
 
 void main() {
-	// glitterSize = nombre de cellules par unité UV (convention "maille" : plus grand = plus fin)
-	float p = glitterSize / 1024.;
-	vec2 lowresUv = floor(vUv / p) * p;
+	// vNormal est interpolée entre sommets, donc raccourcie : la renormaliser
+	vec3 N = normalize(vNormal);
 
-	vec3 noisyNormal;
+	// Sans paillettes — le cas par défaut — le pavage ne sert à rien. Le test porte sur un
+	// uniforme : le branchement est cohérent sur toute la surface, donc gratuit.
+	//
+	// Pas d'atténuation des paillettes selon leur taille à l'écran : filtrer une paillette en
+	// la ramenant vers la normale de la surface la fait purement et simplement disparaître, et
+	// comme l'empreinte écran explose aux angles rasants, la densité se mettait à dépendre de
+	// l'orientation — d'où des plaques de paillettes sur les faces de face, et rien ailleurs.
+	// Le scintillement de loin est le comportement attendu de vraies paillettes.
+	if (glitterAmount > 0.) {
+		vec3 cellPos = vObjectPos * (glitterSize / OBJECT_SIZE);
 
-	if (randf(lowresUv) < pow(glitterAmount, 5.)) {
-		noisyNormal = mix(vNormal, randomV3(lowresUv), glitterVariance);
-	} else {
-		noisyNormal = vNormal;
+		// Un aléa décorrélé du jitter : réutiliser hash33(cell) tel quel lierait l'orientation
+		// d'une paillette à sa position dans sa cellule, ce qui biaiserait la forme des
+		// cellules retenues.
+		vec3 rand = hash33(voronoiCell(cellPos) + 19.19);
+
+		if (rand.x < glitterAmount) {
+			// Direction uniforme sur la sphère. normalize() d'un vecteur tiré dans le cube
+			// sur-représenterait les diagonales, et alignerait visiblement les paillettes.
+			float z = rand.y * 2. - 1.;
+			float phi = rand.z * 2. * PI;
+			vec3 flakeNormal = vec3(sqrt(1. - z * z) * vec2(cos(phi), sin(phi)), z);
+
+			// Rabattre la direction dans l'hémisphère de N borne l'écart à 90° : à
+			// glitterVariance = 1 une paillette peut être perpendiculaire à la surface, jamais
+			// retournée vers l'intérieur — où elle ne renverrait de toute façon aucune lumière.
+			if (dot(flakeNormal, N) < 0.) flakeNormal = -flakeNormal;
+
+			N = normalize(mix(N, flakeNormal, glitterVariance));
+		}
 	}
 
-	// vNormal est interpolée entre sommets, donc raccourcie : la renormaliser
-	vec3 N = normalize(noisyNormal);
 	vec3 V = normalize(cameraPosition - vWorldPos);
 	vec3 L = normalize(lightPos - vWorldPos);
 	vec3 H = normalize(V + L);
