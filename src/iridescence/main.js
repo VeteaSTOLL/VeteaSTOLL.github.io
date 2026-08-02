@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GUI } from 'lil-gui';
 
 // Inventaire de public/models dressé au build par le plugin models-manifest (voir vite.config.js)
@@ -21,6 +21,11 @@ const MODELES = fichiersObj.map( f => f.replace( /\.obj$/i, '' ) );
 // que soit l'échelle du .obj, et surtout OBJECT_SIZE dans fragment.glsl reste juste : c'est lui
 // qui fixe la taille des paillettes.
 const TAILLE_MODELE = 26;
+
+// Deux faces voisines dont les normales s'écartent de moins de cet angle sont lissées ensemble ;
+// au-delà, l'arête est tenue pour vive et chaque face garde sa propre normale. Tout lisser en bloc
+// arrondirait les coins d'un cube ; ne rien lisser laisse voir chaque facette.
+const ANGLE_ARETE_VIVE = THREE.MathUtils.degToRad( 60 );
 
 let camera, scene, renderer, object, controls;
 let shader;
@@ -160,22 +165,28 @@ async function lireObj( modele ) {
 	const echelle = TAILLE_MODELE / ( 2 * geometry.boundingSphere.radius );
 	geometry.scale( echelle, echelle, echelle );
 
-	return geometry;
+	// Les normales sont refaites ici, et surtout pas avant la mise à l'échelle : toCreasedNormals
+	// regroupe les sommets par position arrondie au centième d'unité, une tolérance qui n'a de sens
+	// qu'une fois l'objet ramené à TAILLE_MODELE. Sur un .obj modélisé au millimètre, tout le
+	// maillage tomberait dans la même case.
+	return toCreasedNormals( geometry, ANGLE_ARETE_VIVE );
 }
 
 function normaliser( geometry ) {
 	// Le shader n'échantillonne aucune texture, et repère les paillettes en espace objet : les UV
-	// ne servent à rien. S'en débarrasser laisse mergeVertices recoller les sommets dupliqués aux
-	// coutures, sans quoi les normales calculées seraient facettées.
-	for ( const attribut of [ 'uv', 'uv1', 'uv2', 'color' ] ) geometry.deleteAttribute( attribut );
+	// ne servent à rien.
+	//
+	// Les normales partent avec : à défaut de « vn » dans le fichier — apple.obj n'en a aucun —
+	// OBJLoader en fabrique une PAR FACE (addFaceNormal), et le maillage ressort facetté quelle
+	// que soit sa densité. Les rebâtir sans condition est aussi plus sûr que se fier aux « vn »
+	// du fichier, que certains exports écrivent également par face. C'est toCreasedNormals qui
+	// s'en charge, en fin de lireObj().
+	for ( const attribut of [ 'uv', 'uv1', 'uv2', 'color', 'normal' ] ) geometry.deleteAttribute( attribut );
 
-	// Tous les .obj ne déclarent pas de normales (apple.obj n'en a aucune) : sans elles, le
-	// shader n'a plus rien à éclairer et le modèle ressort noir.
-	if ( geometry.hasAttribute( 'normal' ) ) return geometry;
-
-	const recolle = mergeVertices( geometry );
-	recolle.computeVertexNormals();
-	return recolle;
+	// mergeGeometries veut des parties toutes indexées ou toutes non indexées. OBJLoader ne produit
+	// que du non-indexé, mais on ne dépend pas de ce détail — et toCreasedNormals dé-indexe de
+	// toute façon.
+	return geometry.index ? geometry.toNonIndexed() : geometry;
 }
 
 async function setGeometry( modele ) {
