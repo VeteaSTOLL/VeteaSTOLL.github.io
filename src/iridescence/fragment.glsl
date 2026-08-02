@@ -37,8 +37,9 @@ uniform float glitterAmount; // [0, 1] : fraction des cellules qui portent une p
 uniform float glitterVariance; // [0, 1] : 0 = paillettes alignées sur la surface (invisibles), 1 = orientations quelconques
 uniform float glitterSize; // nombre de paillettes en travers de l'objet : plus grand = plus fines
 
-// Diamètre approximatif des géométries de la scène (sphère r=13, nœud de tore ~13, cube 16).
-// Sert à donner à glitterSize une signification indépendante de la géométrie affichée.
+// Diamètre approximatif des géométries de la scène : les natives sont construites à cette
+// échelle, et main.js y ramène tout modèle chargé (TAILLE_MODELE). glitterSize garde ainsi la
+// même signification quel que soit l'objet affiché.
 const float OBJECT_SIZE = 26.;
 
 const float PI = 3.1415926536;

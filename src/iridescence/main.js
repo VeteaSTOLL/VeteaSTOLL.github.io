@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GUI } from 'lil-gui';
+
+// Inventaire de public/models dressé au build par le plugin models-manifest (voir vite.config.js)
+import fichiersObj from 'virtual:models';
 
 import vertexShader from './vertex.glsl?raw';
 import fragmentShader from './fragment.glsl?raw';
@@ -8,9 +13,25 @@ import fragmentShader from './fragment.glsl?raw';
 const BELCOUR = 'Belcour-Barla';
 const REFERENCE = 'Référence spectrale';
 
+const NATIFS = [ 'sphere', 'cube', 'torus' ];
+// Dans la liste, un modèle porte le nom de son fichier sans l'extension
+const MODELES = fichiersObj.map( f => f.replace( /\.obj$/i, '' ) );
+
+// Tout modèle chargé est ramené à ce diamètre. Le cadrage de la caméra reste ainsi valable quelle
+// que soit l'échelle du .obj, et surtout OBJECT_SIZE dans fragment.glsl reste juste : c'est lui
+// qui fixe la taille des paillettes.
+const TAILLE_MODELE = 26;
+
 let camera, scene, renderer, object, controls;
 let shader;
 let uniforms;
+
+// Les géométries sont gardées en mémoire une fois construites : rebasculer sur un modèle déjà
+// vu est instantané, et évite surtout de retélécharger puis reparser un .obj de plusieurs Mo.
+const geometries = new Map(); // nom -> Promise< BufferGeometry >
+
+let demande = 0; // un .obj se charge de façon asynchrone : seule la dernière demande compte
+
 let settings = {
 	modele: 'torus',
 	mode: BELCOUR,
@@ -28,14 +49,22 @@ let settings = {
 	// un chroma de 0.19 (gris), #6c6c6c le maximise à 0.87.
 	baseF0: '#6c6c6c',
 	lightPos: { x: 30, y: 30, z: 30 },
-	glitterAmount: 0,
-	glitterVariance: 0,
-	glitterSize: 30,
+	glitterAmount: 0.03,
+	glitterVariance: 0.3,
+	glitterSize: 500,
 };
 
 init();
 initGui();
 animate();
+setGeometry( settings.modele );
+
+// Les .obj partent en tâche de fond dès le chargement de la page : le premier rendu n'attend
+// rien, et le temps de dérouler la liste ils sont déjà prêts. loadGeometry() mémorise la
+// promesse, donc choisir un modèle en cours de route se raccroche au téléchargement en vol.
+for ( const modele of MODELES ) {
+	loadGeometry( modele ).catch( error => console.error( `Modèle « ${ modele } » illisible`, error ) );
+}
 
 function initGui() {
 	const gui = new GUI();
@@ -54,7 +83,7 @@ function initGui() {
 	bind( 'exposure', "Exposition", 0, 20, 0.01 );
 	bind( 'glitterAmount', "Paillettes", 0, 1, 0.01 );
 	bind( 'glitterVariance', "Variance des paillettes", 0, 1, 0.01 );
-	bind( 'glitterSize', "Finesse des paillettes", 1, 500, 1 );
+	bind( 'glitterSize', "Finesse des paillettes", 1, 1000, 1 );
 
 	// Ces deux-là n'ont de sens que pour l'intégration explicite : la forme analytique suppose
 	// une différence de marche indépendante de λ, donc un milieu non dispersif.
@@ -82,7 +111,7 @@ function initGui() {
 		} );
 	}
 
-	gui.add( settings, 'modele', [ 'sphere', 'cube', 'torus' ] ).name( "Modèle" ).onChange( setGeometry );
+	gui.add( settings, 'modele', [ ...NATIFS, ...MODELES ] ).name( "Modèle" ).onChange( setGeometry );
 
 	cauchy.show( settings.mode === REFERENCE );
 	waves.show( settings.mode === REFERENCE );
@@ -100,10 +129,65 @@ function createGeometry( modele ) {
 	}
 }
 
-function setGeometry( modele ) {
+function loadGeometry( modele ) {
+	if ( ! geometries.has( modele ) ) {
+		geometries.set( modele, NATIFS.includes( modele )
+			? Promise.resolve( createGeometry( modele ) )
+			: lireObj( modele ) );
+	}
+	return geometries.get( modele );
+}
+
+async function lireObj( modele ) {
+	const obj = await new OBJLoader().loadAsync( `models/${ modele }.obj` );
+
+	// Un .obj peut contenir plusieurs groupes : on les fusionne pour n'avoir qu'un seul maillage.
+	const parties = [];
+	obj.traverse( function ( child ) {
+		if ( child.isMesh ) parties.push( normaliser( child.geometry ) );
+	} );
+	if ( parties.length === 0 ) throw new Error( `${ modele }.obj ne contient aucun maillage` );
+
+	const geometry = parties.length > 1 ? mergeGeometries( parties ) : parties[ 0 ];
+
+	// Un .obj arrive à une échelle et une origine quelconques — apple.obj culmine à y ≈ 200.
+	geometry.center();
+	geometry.computeBoundingSphere();
+	const echelle = TAILLE_MODELE / ( 2 * geometry.boundingSphere.radius );
+	geometry.scale( echelle, echelle, echelle );
+
+	return geometry;
+}
+
+function normaliser( geometry ) {
+	// Le shader n'échantillonne aucune texture, et repère les paillettes en espace objet : les UV
+	// ne servent à rien. S'en débarrasser laisse mergeVertices recoller les sommets dupliqués aux
+	// coutures, sans quoi les normales calculées seraient facettées.
+	for ( const attribut of [ 'uv', 'uv1', 'uv2', 'color' ] ) geometry.deleteAttribute( attribut );
+
+	// Tous les .obj ne déclarent pas de normales (apple.obj n'en a aucune) : sans elles, le
+	// shader n'a plus rien à éclairer et le modèle ressort noir.
+	if ( geometry.hasAttribute( 'normal' ) ) return geometry;
+
+	const recolle = mergeVertices( geometry );
+	recolle.computeVertexNormals();
+	return recolle;
+}
+
+async function setGeometry( modele ) {
+	const jeton = ++demande;
+
+	let geometry;
+	try {
+		geometry = await loadGeometry( modele );
+	} catch {
+		return; // l'erreur a déjà été signalée au préchargement
+	}
+
+	if ( jeton !== demande ) return; // un autre modèle a été choisi entre-temps
+
 	scene.remove( object );
-	object.geometry.dispose(); // sinon l'ancienne géométrie reste en mémoire GPU
-	object = new THREE.Mesh( createGeometry( modele ), shader );
+	object = new THREE.Mesh( geometry, shader );
 	scene.add( object );
 }
 
@@ -138,7 +222,8 @@ function init() {
 
 	shader.glslVersion = THREE.GLSL3;
 
-	object = new THREE.Mesh( createGeometry( settings.modele ), shader );
+	// Géométrie vide : setGeometry() la remplace, éventuellement après un chargement asynchrone
+	object = new THREE.Mesh( new THREE.BufferGeometry(), shader );
 	scene.add( object );
 
 	renderer = new THREE.WebGLRenderer( { antialias: true } );
