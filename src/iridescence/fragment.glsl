@@ -32,6 +32,9 @@ uniform bool useReference;
 uniform float saturation;
 uniform float exposure;
 
+// intensité de la lumière ambiante, relative à la source ponctuelle
+uniform float ambient;
+
 // paillettes
 uniform float glitterAmount; // [0, 1] : fraction des cellules qui portent une paillette
 uniform float glitterVariance; // [0, 1] : 0 = paillettes alignées sur la surface (invisibles), 1 = orientations quelconques
@@ -380,11 +383,36 @@ void main() {
 	} else {
 		rgb = evalIridescence(n1, n2, cosTheta1, thickness);
 	}
+	rgb *= specular;
 
+	// Lumière ambiante. Le lobe spéculaire est le seul terme du modèle : tout ce qu'il n'atteint
+	// pas vaut exactement zéro, d'où des ombres parfaitement noires.
+	//
+	// L'ambiante arrivant de toutes les directions, celle qui repart vers l'œil est celle
+	// réfléchie autour de la normale : l'angle d'incidence sur le film est donc (N, V), et non
+	// (V, H) comme pour la source ponctuelle. Ça change tout — avec (V, H) la face à l'ombre
+	// serait lavée d'une teinte unique, dictée par une lumière qui ne l'éclaire pas ; avec
+	// (N, V) l'irisation continue de tourner avec le point de vue, et le terme de Fresnel déjà
+	// présent dans le modèle fait monter la réflectance vers les silhouettes.
+	if (ambient > 0.) {
+		float cosThetaView = clamp(dot(N, V), 0., 1.);
+
+		vec3 ambientRgb;
+		if (useReference) {
+			ambientRgb = evalSpectralReference(cosThetaView, thickness);
+		} else {
+			ambientRgb = evalIridescence(n1, n2, cosThetaView, thickness);
+		}
+
+		rgb += ambientRgb * ambient;
+	}
+
+	// Saturation et exposition sont linéaires : les appliquer après la somme plutôt que sur le
+	// seul terme direct laisse le rendu inchangé à ambient = 0, et traite les deux termes pareil.
 	float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
 	rgb = max(mix(vec3(luma), rgb, saturation), 0.);
 
-	rgb *= specular * exposure;
+	rgb *= exposure;
 
 	// Sans tone mapping, le cœur du highlight — là où on veut justement voir la couleur —
 	// écrêterait en blanc.

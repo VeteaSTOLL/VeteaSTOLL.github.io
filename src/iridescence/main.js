@@ -42,16 +42,19 @@ let settings = {
 	numberOfWaves: 32,
 	saturation: 1,
 	// La réflectance iridescente vaut ~0.15 : sans exposition l'objet serait très sombre.
-	exposure: 5,
+	exposure: 12,
+	// Fraction de la source ponctuelle reçue par les faces qu'elle n'éclaire pas. Au-delà de
+	// ~0.3 l'ambiante prend le dessus et le relief donné par le lobe spéculaire s'aplatit.
+	ambient: 0.03,
 	// Réflectance de la couche du dessous. Contre-intuitivement, un fond TRÈS réfléchissant
 	// (proche du blanc) tue les couleurs : les deux ondes qui interfèrent ont alors des
 	// amplitudes très déséquilibrées, donc des franges peu visibles. Mesuré : #f2f2f2 donne
 	// un chroma de 0.19 (gris), #6c6c6c le maximise à 0.87.
 	baseF0: '#6c6c6c',
 	lightPos: { x: 30, y: 30, z: 30 },
-	glitterAmount: 0.03,
+	glitterAmount: 0.05,
 	glitterVariance: 0.3,
-	glitterSize: 500,
+	glitterSize: 800,
 };
 
 init();
@@ -76,11 +79,12 @@ function initGui() {
 		return ctrl.onChange( value => { uniforms[ key ].value = value; } );
 	};
 
-	bind( 'e', "Exposant", 1, 200 );
+	bind( 'e', "Exposant", 1, 20 );
 	bind( 'n2', "Indice n2", 1, 2 );
 	bind( 'thickness', "Épaisseur (nm)", 100, 1000 );
 	bind( 'saturation', "Saturation", 0, 3, 0.01 );
 	bind( 'exposure', "Exposition", 0, 20, 0.01 );
+	bind( 'ambient', "Ambiante", 0, 1, 0.01 );
 	bind( 'glitterAmount', "Paillettes", 0, 1, 0.01 );
 	bind( 'glitterVariance', "Variance des paillettes", 0, 1, 0.01 );
 	bind( 'glitterSize', "Finesse des paillettes", 1, 1000, 1 );
@@ -209,6 +213,7 @@ function init() {
 		useReference: { value: settings.mode === REFERENCE },
 		saturation: { value: settings.saturation },
 		exposure: { value: settings.exposure },
+		ambient: { value: settings.ambient },
 		glitterAmount: { value: settings.glitterAmount },
 		glitterVariance: { value: settings.glitterVariance },
 		glitterSize: { value: settings.glitterSize },
