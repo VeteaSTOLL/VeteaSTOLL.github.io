@@ -28,6 +28,8 @@ let settings = {
 	// un chroma de 0.19 (gris), #6c6c6c le maximise à 0.87.
 	baseF0: '#6c6c6c',
 	lightPos: { x: 30, y: 30, z: 30 },
+	glitterAmount: 0,
+	glitterVariance: 0,
 };
 
 init();
@@ -49,6 +51,8 @@ function initGui() {
 	bind( 'thickness', "Épaisseur (nm)", 100, 1000 );
 	bind( 'saturation', "Saturation", 0, 3, 0.01 );
 	bind( 'exposure', "Exposition", 0, 20, 0.01 );
+	bind( 'glitterAmount', "Paillettes", 0, 1, 0.01 );
+	bind( 'glitterVariance', "Variance des paillettes", 0, 1, 0.01 );
 
 	// Ces deux-là n'ont de sens que pour l'intégration explicite : la forme analytique suppose
 	// une différence de marche indépendante de λ, donc un milieu non dispersif.
@@ -119,6 +123,8 @@ function init() {
 		useReference: { value: settings.mode === REFERENCE },
 		saturation: { value: settings.saturation },
 		exposure: { value: settings.exposure },
+		glitterAmount: { value: settings.glitterAmount },
+		glitterVariance: { value: settings.glitterVariance },
 	};
 
 	shader = new THREE.ShaderMaterial( {

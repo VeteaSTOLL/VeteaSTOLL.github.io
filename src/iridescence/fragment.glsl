@@ -1,5 +1,6 @@
 in vec3 vNormal;
 in vec3 vWorldPos;
+in vec2 vUv;
 
 out vec4 outColor;
 
@@ -30,6 +31,10 @@ uniform bool useReference;
 // 1. = rendu physique non retouché
 uniform float saturation;
 uniform float exposure;
+
+// paillettes
+uniform float glitterAmount; // [0, 1] : 0 = pas de paillettes, 1 = couvert de paillettes
+uniform float glitterVariance; // [0, 1] : 0 = paillettes invisibles, 1 = paillettes très différentes de la surface
 
 const float PI = 3.1415926536;
 
@@ -270,10 +275,36 @@ vec3 linearToSRGB(vec3 c) {
 	return mix(12.92 * c, 1.055 * pow(c, vec3(1. / 2.4)) - 0.055, step(0.0031308, c));
 }
 
+// Source - https://stackoverflow.com/a/4275343
+// Posted by appas, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-08-01, License - CC BY-SA 4.0
+
+// donne un float aléatoire entre 0 et 1 en fonction des coordonées uv
+float randf(vec2 co){
+    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+
+// donne une direction random en fonction des coodonées UV
+vec3 randomV3(vec2 uv) {
+	float x = fract(sin(dot(uv, vec2(127.1, 311.7))) * 43758.5453);
+	float y = fract(sin(dot(uv, vec2(269.5, 183.3))) * 43758.5453);
+	float z = fract(sin(dot(uv, vec2(113.5, 271.9))) * 43758.5453);
+	return vec3(x, y, z);
+}
+
 
 void main() {
+	vec3 noisyNormal;
+	
+	if (randf(vUv) < pow(glitterAmount, 5.)) {
+		noisyNormal = mix(vNormal, randomV3(vUv), glitterVariance);
+	} else {
+		noisyNormal = vNormal;
+	}
+
 	// vNormal est interpolée entre sommets, donc raccourcie : la renormaliser
-	vec3 N = normalize(vNormal);
+	vec3 N = normalize(noisyNormal);
 	vec3 V = normalize(cameraPosition - vWorldPos);
 	vec3 L = normalize(lightPos - vWorldPos);
 	vec3 H = normalize(V + L);
@@ -305,4 +336,5 @@ void main() {
 
 	// Encodage sRGB en tout dernier, après l'intégration
 	outColor = vec4(linearToSRGB(rgb), 1.);
+	// outColor = vec4(N, 1.);
 }
